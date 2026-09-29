@@ -94,6 +94,7 @@ class CheckpointService:
                     payload["snapshot_path"] = evidence.snapshot_path
                 if evidence.diff_evidence is not None:
                     payload["diff_evidence_id"] = evidence.diff_evidence.id
+                    payload["diff_evidence_sha256"] = evidence.diff_evidence.ref
 
             event = RawEvent(
                 id=new_id("RAW"),

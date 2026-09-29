@@ -11,13 +11,39 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic import ValidationError as PydanticValidationError
 
 from project_evolution.errors import ConfigError
 
 PEL_DIR_NAME = ".project-evolution"
 CONFIG_FILENAME = "config.yaml"
+
+
+class ChangeDigestConfig(BaseModel):
+    """change_digest 预算（07-storage-and-index.md §8）。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    max_files: int = 50
+    max_total_diff_chars: int = 40_000
+
+
+class PrivacyConfig(BaseModel):
+    """privacy.exclude：额外排除模式（只能追加；.project-evolution/ 硬编码不可关闭）。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    exclude: list[str] = Field(default_factory=lambda: [".env", "*.pem", "*.key"])
+
+
+class EvidenceConfig(BaseModel):
+    """Evidence patch 预算（07-storage-and-index.md §10）。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    commit_diffs: bool = True
+    max_patch_bytes: int = 200_000
 
 
 class PelConfig(BaseModel):
@@ -30,6 +56,9 @@ class PelConfig(BaseModel):
     #: Evolution Model 的模型名与 API Key 环境变量名（仅名字，永不保存明文）
     analyzer_model: str | None = None
     analyzer_api_key_env: str | None = None
+    change_digest: ChangeDigestConfig = Field(default_factory=ChangeDigestConfig)
+    privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
+    evidence: EvidenceConfig = Field(default_factory=EvidenceConfig)
 
     @property
     def analyzer_api_key(self) -> str | None:
