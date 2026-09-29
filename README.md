@@ -3,7 +3,7 @@
 面向 Coding Agent 的项目工程演进记录系统。回答一个核心问题：
 **这个项目是怎样一步一步变成现在这样的？**
 
-当前实现（Phase 01 + Phase 02）：
+当前实现（Phase 01 + Phase 02 + Phase 03）：
 
 - **领域模型库**（`project_evolution.models`）：Project / Session / Task /
   TaskSessionLink / Checkpoint / RawEvent / Evidence / EvolutionEvent /
@@ -16,6 +16,10 @@
 - **Raw Event Ledger**（`project_evolution.ledger`）：`raw.jsonl` 的可靠追加、
   seq 分配（项目级写锁内单调递增）、批量原子写入（失败回滚不半写）、
   按 seq 严格重放、ID 去重、尾部损坏检测与截断修复、中间损坏明确报错。
+- **Task 生命周期**（`project_evolution.tasks`）：start/pause/resume/complete/cancel
+  状态机（终态拒绝一切生命周期调用，重复 complete 幂等）、Session 绑定与跨 Session
+  接续、Checkpoint index 在 Task 内严格递增；Canonical 状态由 RawEvent Ledger
+  投影重建，`.runtime/tasks/` journal 只是恢复用镜像。
 
 ## 安装与开发
 
@@ -41,23 +45,24 @@ pel doctor [--project PATH] [--repair] [--json]
 ## 快速上手
 
 ```python
-from datetime import datetime, timezone
-from project_evolution.ids import new_id
-from project_evolution.ledger import RawEventLedger
-from project_evolution.models import RawEvent
+from project_evolution.tasks import create_task_services
 
-ledger = RawEventLedger("./my-project")
-stamped = ledger.append(RawEvent(
-    id=new_id("RAW"),
-    project_id="PRJ-...",
-    timestamp=datetime.now(timezone.utc),
-    kind="file_modified",
-    source="cli",
-    payload={"path": "Core/Service.cs"},
-))
-print(stamped.seq)  # seq 由 Ledger 在写锁内分配
+services = create_task_services("./my-project")
 
-for event in ledger.iter_events():  # 严格按 seq 顺序
+# 开始 Task（可选绑定 agent Session）
+task = services.tasks.start_task("PRJ-...", "实现外部窗口透明度", agent="codex")
+
+# 阶段 Checkpoint：index 在 Task 内严格递增
+services.checkpoints.create_checkpoint(task.id, summary="核心逻辑完成", reason="milestone")
+
+# 换一个 Session 继续（Session 结束不会自动完成 Task）
+services.sessions.end_session(session_a.id)
+services.sessions.bind_task(task.id, session_b.id)
+
+# 完成（重复调用幂等，不追加事件）
+services.tasks.complete_task(task.id, summary="透明度完成")
+
+for event in services.store.replay():  # 严格按 seq 顺序
     ...
 ```
 
