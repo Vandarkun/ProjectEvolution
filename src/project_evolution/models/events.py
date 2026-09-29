@@ -19,9 +19,14 @@ from pydantic import BaseModel, model_validator
 #: V0.1 支持的 EvolutionEvent 类型（02-data-model.md §10）
 EvolutionEventType = Literal["feature_change", "parameter_change", "decision", "bug_fix"]
 
-#: 已知 kind 的 payload 必填字段（03-event-model.md §3 中明确标注"至少包含"的部分）。
-#: 未知 kind 不做约束，保持前向兼容；更完整的 payload schema 随采集层后续阶段补充。
+#: 已知 kind 的 payload 必填字段（03-event-model.md §3 中明确标注"至少包含"的部分，
+#: 加上 phase-03 生命周期采集层补充的 kind）。未知 kind 不做约束，保持前向兼容。
 _REQUIRED_PAYLOAD_FIELDS: dict[str, tuple[str, ...]] = {
+    "task_started": ("title",),
+    "task_completed": ("summary", "final_ref"),
+    "checkpoint_created": ("index",),
+    "session_started": ("agent",),
+    "task_session_bound": ("agent",),
     "file_added": ("path",),
     "file_modified": ("path",),
     "file_deleted": ("path",),

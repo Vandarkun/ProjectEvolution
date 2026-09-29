@@ -105,11 +105,17 @@ class RawEventLedger:
 
     # ------------------------------------------------------------------ write
 
-    def append(self, event: RawEvent) -> RawEvent:
-        """锁内分配 seq 并追加一行，返回带 seq 的事件副本（入参不被修改）。"""
-        return self.append_many([event])[0]
+    def append(self, event: RawEvent, *, assume_locked: bool = False) -> RawEvent:
+        """锁内分配 seq 并追加一行，返回带 seq 的事件副本（入参不被修改）。
 
-    def append_many(self, events: list[RawEvent]) -> list[RawEvent]:
+        ``assume_locked=True`` 供上层服务在已持有项目写锁的临界区内追加
+        （read-project-then-append 必须整体串行，锁不可重入，见 lock.py）。
+        """
+        return self.append_many([event], assume_locked=assume_locked)[0]
+
+    def append_many(
+        self, events: list[RawEvent], *, assume_locked: bool = False
+    ) -> list[RawEvent]:
         """整批写入：验证通过后一次性追加，失败回滚，不产生半写。"""
         batch = list(events)
         for event in batch:
@@ -124,34 +130,38 @@ class RawEventLedger:
             duplicates = sorted({eid for eid in batch_ids if batch_ids.count(eid) > 1})
             raise DuplicateEventError(f"duplicate event id within batch: {duplicates}")
 
+        if assume_locked:
+            return self._append_batch_locked(batch, batch_ids)
         with write_lock(self._lock_path, timeout=self._lock_timeout):
-            self._refresh_index_locked()
-            for eid in batch_ids:
-                if eid in self._ids:
-                    raise DuplicateEventError(f"event id already exists in ledger: {eid}")
+            return self._append_batch_locked(batch, batch_ids)
 
-            base = self._next_seq
-            stamped = [
-                event.model_copy(update={"seq": base + i}) for i, event in enumerate(batch)
-            ]
-            blob = "".join(
-                encode_record(event.model_dump(mode="json")) + "\n" for event in stamped
-            ).encode("utf-8")
-            prev_size = self._index_offset  # refresh 后等于文件大小
-            assert prev_size is not None
-            try:
-                self._write_blob_locked(blob)
-            except BaseException:
-                self._rollback_locked(prev_size)
-                raise
+    def _append_batch_locked(self, batch: list[RawEvent], batch_ids: list[str]) -> list[RawEvent]:
+        """在已持有项目写锁的前提下执行整批追加。"""
+        self._refresh_index_locked()
+        for eid in batch_ids:
+            if eid in self._ids:
+                raise DuplicateEventError(f"event id already exists in ledger: {eid}")
 
-            self._ids.update(batch_ids)
-            self._next_seq = base + len(batch)
-            self._line_count += len(batch)
-            if batch:
-                self._last_seq = base + len(batch) - 1
-            self._index_offset = prev_size + len(blob)
-            return stamped
+        base = self._next_seq
+        stamped = [event.model_copy(update={"seq": base + i}) for i, event in enumerate(batch)]
+        blob = "".join(
+            encode_record(event.model_dump(mode="json")) + "\n" for event in stamped
+        ).encode("utf-8")
+        prev_size = self._index_offset  # refresh 后等于文件大小
+        assert prev_size is not None
+        try:
+            self._write_blob_locked(blob)
+        except BaseException:
+            self._rollback_locked(prev_size)
+            raise
+
+        self._ids.update(batch_ids)
+        self._next_seq = base + len(batch)
+        self._line_count += len(batch)
+        if batch:
+            self._last_seq = base + len(batch) - 1
+        self._index_offset = prev_size + len(blob)
+        return stamped
 
     # ------------------------------------------------------------------- read
 

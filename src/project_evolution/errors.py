@@ -33,3 +33,15 @@ class InvalidStateError(PelError):
 
 class StorageError(PelError):
     """持久化层（Ledger / Lock / 文件）错误。"""
+
+
+class EntityNotFoundError(PelError):
+    """请求的领域对象（Task / Session 等）不存在。"""
+
+
+class TaskNotFoundError(EntityNotFoundError):
+    """指定的 Task 不存在。"""
+
+
+class SessionNotFoundError(EntityNotFoundError):
+    """指定的 Session 不存在。"""
