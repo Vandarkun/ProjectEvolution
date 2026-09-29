@@ -140,6 +140,30 @@ def test_pel_writes_never_in_evidence(tmp_path: Path) -> None:
         assert all(not p.startswith(".project-evolution/") for p in data["files"])
 
 
+def test_secret_content_never_persisted_in_patch(tmp_path: Path) -> None:
+    """secret 文件变化仍可被记录（path/hash），但内容永不写入 patch。"""
+    repo = init_repo(tmp_path)
+    (repo / "a.py").write_bytes(b"a\n")
+    (repo / ".env").write_bytes(b"API_KEY=old\n")
+    commit_all(repo, "init")
+    services = create_git_aware_task_services(repo, project_id=PRJ)
+    task = services.tasks.start_task(PRJ, "t")
+    (repo / ".env").write_bytes(b"API_KEY=super-secret-value\n")
+    cp = services.checkpoints.create_checkpoint(task.id)
+
+    events = file_events(services, cp.id)
+    assert [e.payload["path"] for e in events] == [".env"]  # 变化本身被记录
+    event = cp_event(services, cp.id)
+    patch = (
+        repo / ".project-evolution" / "evidence" / "diffs"
+        / (event.payload["diff_evidence_id"] + ".patch")
+    )
+    text = patch.read_text(encoding="utf-8")
+    assert ".env" in text  # 事实可追溯
+    assert "super-secret-value" not in text  # 内容绝不落盘
+    assert "content withheld" in text
+
+
 def test_no_changes_checkpoint_has_no_evidence(tmp_path: Path) -> None:
     repo = init_repo(tmp_path)
     (repo / "a.py").write_bytes(b"a\n")

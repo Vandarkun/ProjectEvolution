@@ -3,7 +3,7 @@
 面向 Coding Agent 的项目工程演进记录系统。回答一个核心问题：
 **这个项目是怎样一步一步变成现在这样的？**
 
-当前实现（Phase 01 + Phase 02 + Phase 03）：
+当前实现（Phase 01 ~ Phase 04）：
 
 - **领域模型库**（`project_evolution.models`）：Project / Session / Task /
   TaskSessionLink / Checkpoint / RawEvent / Evidence / EvolutionEvent /
@@ -20,6 +20,15 @@
   状态机（终态拒绝一切生命周期调用，重复 complete 幂等）、Session 绑定与跨 Session
   接续、Checkpoint index 在 Task 内严格递增；Canonical 状态由 RawEvent Ledger
   投影重建，`.runtime/tasks/` journal 只是恢复用镜像。
+- **Git 变化分析**（`project_evolution.git`）：只读 GitAdapter（子命令白名单 +
+  超时 + 参数数组，`.project-evolution/` 从一切采集永久排除）、逐文件内容快照 +
+  sha256 blob 去重、快照间增量 diff（不做 patch 相减）、rename 识别（hash 精确 /
+  内容相似度 + find-renames 交叉验证）、diff evidence（patch 落
+  `evidence/diffs/`，secret 只记 path+hash 不落内容）、non-Git 明确降级。
+- **ChangeDigest**（`project_evolution.evolution`）：发往模型的确定性变更摘要
+  （changed/added/deleted/renamed、diff_stat、预算内 hunk 选取、truncated），
+  privacy filter 硬编码排除 secret 与 PEL 自身目录，generated/binary/lock
+  可追溯地记入 excluded。
 
 ## 安装与开发
 
@@ -45,21 +54,27 @@ pel doctor [--project PATH] [--repair] [--json]
 ## 快速上手
 
 ```python
-from project_evolution.tasks import create_task_services
+from project_evolution.git import (
+    build_digest_for_checkpoint,
+    create_git_aware_task_services,
+)
 
-services = create_task_services("./my-project")
+# Task/Checkpoint 服务 + Git 采集（non-Git 目录自动降级）
+services = create_git_aware_task_services("./my-project", project_id="PRJ-...")
 
-# 开始 Task（可选绑定 agent Session）
+# 开始 Task：记录 HEAD/branch/status + 工作区快照（Task 前的 Dirty Tree 进基线）
 task = services.tasks.start_task("PRJ-...", "实现外部窗口透明度", agent="codex")
 
-# 阶段 Checkpoint：index 在 Task 内严格递增
-services.checkpoints.create_checkpoint(task.id, summary="核心逻辑完成", reason="milestone")
+# ... 编码 ...
 
-# 换一个 Session 继续（Session 结束不会自动完成 Task）
-services.sessions.end_session(session_a.id)
-services.sessions.bind_task(task.id, session_b.id)
+# 阶段 Checkpoint：对比上一快照逐文件增量 -> diff evidence + changed-file 事件
+cp = services.checkpoints.create_checkpoint(task.id, summary="核心逻辑完成")
 
-# 完成（重复调用幂等，不追加事件）
+# 重建该 Checkpoint 的 ChangeDigest（Phase 05 的模型输入；secret 已过滤）
+digest = build_digest_for_checkpoint(
+    "./my-project", project_id="PRJ-...", task_id=task.id, checkpoint_id=cp.id
+)
+
 services.tasks.complete_task(task.id, summary="透明度完成")
 
 for event in services.store.replay():  # 严格按 seq 顺序
