@@ -98,6 +98,23 @@ class DigestEvidence(BaseModel):
     what: str = ""
 
 
+class DigestTestResult(BaseModel):
+    """Digest 中的测试命令结果（03-event-model.md §3 test_passed/failed）。"""
+
+    command: str
+    status: str  # passed / failed
+    source: str  # agent_claim / pel_verified
+    evidence_id: str | None = None
+
+
+class DigestAgentSummary(BaseModel):
+    """Digest 中的 Agent 事实总结（03-event-model.md §3 agent_summary）。"""
+
+    text: str
+    source_agent: str | None = None
+    evidence_id: str | None = None
+
+
 class ChangeDigest(BaseModel):
     """发往 Evolution Model 的确定性变更摘要。"""
 
@@ -121,6 +138,10 @@ class ChangeDigest(BaseModel):
     scope_confidence: str = "normal"
     #: 本 Checkpoint 的全部 Evidence（模型 evidence_ids 的唯一合法来源）
     evidence: list[DigestEvidence] = Field(default_factory=list)
+    #: 本 Checkpoint 的测试命令结果（phase-05 §5：带 evidence_id 与 source）
+    test_results: list[DigestTestResult] = Field(default_factory=list)
+    #: 本 Checkpoint 的 Agent 事实总结（phase-05 §5：带 evidence_id）
+    agent_summaries: list[DigestAgentSummary] = Field(default_factory=list)
 
 
 def _category(path: str) -> int:
