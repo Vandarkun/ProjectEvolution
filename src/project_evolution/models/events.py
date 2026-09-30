@@ -66,7 +66,16 @@ class RawEvent(BaseModel):
 
 
 class EvolutionEvent(BaseModel):
-    """经过语义分析形成的工程事件信封。必须引用 Evidence（人工事件除外）。"""
+    """经过语义分析形成的工程事件信封。必须引用 Evidence（人工事件除外）。
+
+    phase-05 §5 追加的分析溯源字段（05-evolution-analyzer.md §15）：
+
+    - ``analysis_batch_id``：同一次 Checkpoint 分析产生的事件共享一个 ANL- 批次
+      （04-event-ledger.md §6，整批提交，不出现半提交）；
+    - ``prompt_version``：产生该事件使用的 Prompt 版本（如 ``evolution-v1``）；
+    - ``analysis_key``：幂等分析键（project+task+checkpoint+analyzer_version+digest_hash），
+      同键已成功提交则拒绝重复追加（03-event-model.md §12）。
+    """
 
     schema_version: int = 1
     id: str
@@ -81,4 +90,7 @@ class EvolutionEvent(BaseModel):
     evidence_ids: list[str]
     confidence: float | None = None
     analyzer_version: str
+    prompt_version: str
+    analysis_batch_id: str
+    analysis_key: str
     payload: dict[str, Any]

@@ -18,8 +18,9 @@ import time
 
 from project_evolution.errors import ValidationError
 
-#: 允许的 ID 前缀（02-data-model.md §2 的固定清单，不自行扩展）
-PREFIXES = frozenset({"PRJ", "SES", "TASK", "CHK", "RAW", "EVO", "EVD", "MS", "VER"})
+#: 允许的 ID 前缀（02-data-model.md §2 的固定清单 + 04-event-ledger.md §6 的 ANL，
+#: 不再自行扩展）
+PREFIXES = frozenset({"PRJ", "SES", "TASK", "CHK", "RAW", "EVO", "EVD", "MS", "VER", "ANL"})
 
 # Crockford Base32：去掉易混淆的 I L O U
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"

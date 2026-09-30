@@ -113,6 +113,9 @@ def make_evolution_event() -> EvolutionEvent:
         description="提高最低可见度",
         evidence_ids=[make_evidence().id],
         analyzer_version="mock-analyzer/0.1",
+        prompt_version="evolution-v1",
+        analysis_batch_id=new_id("ANL"),
+        analysis_key="PRJ-1|TASK-1|CHK-1|mock-analyzer/0.1|digesthash",
         payload={"name": "OpacityMin", "before": "0.2", "after": "0.3"},
     )
 
