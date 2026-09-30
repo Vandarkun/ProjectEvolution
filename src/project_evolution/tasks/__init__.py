@@ -5,7 +5,9 @@ Canonical 事实源是 RawEvent Ledger；runtime journal 只是恢复用镜像�
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from project_evolution.tasks.checkpoint_service import CheckpointService
 from project_evolution.tasks.journal import TaskJournal
@@ -46,7 +48,13 @@ __all__ = [
 
 
 class TaskServices:
-    """同一 TaskStore 上的三个服务集合，方便调用方共享投影。"""
+    """同一 TaskStore 上的三个服务集合，方便调用方共享投影。
+
+    ``analysis_worker``：phase-05 起组合根可注入的后台语义分析 worker
+    （仅当传入 analysis_provider 时存在）。
+    """
+
+    analysis_worker: Any | None = None
 
     def __init__(
         self,
@@ -54,11 +62,14 @@ class TaskServices:
         *,
         baseline_recorder: BaselineRecorder | None = None,
         checkpoint_collector: CheckpointCollector | None = None,
+        on_checkpoint: Callable[[str, str], None] | None = None,
     ):
         self.store = store
         self.tasks = TaskService(store, baseline_recorder=baseline_recorder)
         self.sessions = SessionService(store)
-        self.checkpoints = CheckpointService(store, collector=checkpoint_collector)
+        self.checkpoints = CheckpointService(
+            store, collector=checkpoint_collector, on_checkpoint=on_checkpoint
+        )
 
 
 def create_task_services(

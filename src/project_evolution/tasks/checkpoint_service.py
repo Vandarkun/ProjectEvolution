@@ -4,11 +4,14 @@
 - 每次产生 checkpoint_created RawEvent（payload: index/reason/summary）；
 - 终态 Task 拒绝 checkpoint（completed → checkpoint ×，cancelled 同样拒绝）；
 - Git 证据通过 CheckpointCollector 端口注入
-  （phase-03 占位为空实现，Phase 04 实现快照对比 + diff evidence）。
+  （phase-03 占位为空实现，Phase 04 实现快照对比 + diff evidence）；
+- ``on_checkpoint`` 挂钩在写锁释放后异步触发（phase-05：语义分析默认异步，
+  Checkpoint 事实落盘即返回，不等待模型）。
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timezone
 
 from project_evolution.errors import InvalidStateError, TaskNotFoundError
@@ -24,9 +27,16 @@ def _now() -> datetime:
 
 
 class CheckpointService:
-    def __init__(self, store: TaskStore, *, collector: CheckpointCollector | None = None):
+    def __init__(
+        self,
+        store: TaskStore,
+        *,
+        collector: CheckpointCollector | None = None,
+        on_checkpoint: Callable[[str, str], None] | None = None,
+    ):
         self._store = store
         self._collector = collector
+        self._on_checkpoint = on_checkpoint
 
     # ------------------------------------------------------------------ read
 
@@ -57,7 +67,11 @@ class CheckpointService:
         *,
         source: str = "cli",
     ) -> Checkpoint:
-        """创建 Checkpoint：采集证据（占位）→ checkpoint_created → file events → journal。"""
+        """创建 Checkpoint：采集证据 → checkpoint_created → file events → journal。
+
+        写锁释放后触发 ``on_checkpoint(task_id, checkpoint_id)`` 挂钩
+        （后台语义分析）；挂钩异常不影响 Checkpoint 结果。
+        """
         with self._store.locked():
             state = self._require_task(task_id)
             if state.status in ("completed", "cancelled"):
@@ -119,7 +133,11 @@ class CheckpointService:
             state.last_seq = events[-1].seq
             state.updated_at = event.timestamp
             self._store.journal.write(state)
-            return _checkpoint_from_event(event)
+            checkpoint = _checkpoint_from_event(event)
+
+        if self._on_checkpoint is not None:
+            self._on_checkpoint(task_id, checkpoint.id)
+        return checkpoint
 
     # ----------------------------------------------------------------- inside
 

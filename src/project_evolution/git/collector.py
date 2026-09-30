@@ -203,9 +203,18 @@ def create_git_ports(
 
 
 def create_git_aware_task_services(
-    project_root: str | Path, *, project_id: str
+    project_root: str | Path,
+    *,
+    project_id: str,
+    analysis_provider: object | None = None,
 ) -> TaskServices:
-    """便捷工厂：TaskServices + Git 采集端口（non-Git 目录自动降级）。"""
+    """便捷工厂：TaskServices + Git 采集端口（non-Git 目录自动降级）。
+
+    phase-05：传入 ``analysis_provider``（EvolutionModelProvider）时组装
+    默认异步的语义分析——checkpoint 事实落盘即返回，分析在后台 worker
+    执行（05-evolution-analyzer.md §16）。worker 通过返回的
+    ``services.analysis_worker`` 显式 stop/drain。
+    """
     from project_evolution.tasks import TaskServices
 
     store = TaskStore(project_root)
@@ -215,7 +224,24 @@ def create_git_aware_task_services(
         store=store,
         max_patch_bytes=store.config.evidence.max_patch_bytes,
     )
-    return TaskServices(store, baseline_recorder=recorder, checkpoint_collector=collector)
+    on_checkpoint = None
+    worker: object | None = None
+    if analysis_provider is not None:
+        from project_evolution.evolution.analyzer_service import EvolutionAnalyzerService
+        from project_evolution.evolution.worker import BackgroundAnalysisWorker
+
+        analyzer = EvolutionAnalyzerService(
+            project_root, analysis_provider, task_store=store  # type: ignore[arg-type]
+        )
+        worker = BackgroundAnalysisWorker(analyzer)
+        on_checkpoint = worker.submit
+
+    services = TaskServices(
+        store, baseline_recorder=recorder, checkpoint_collector=collector,
+        on_checkpoint=on_checkpoint,
+    )
+    services.analysis_worker = worker
+    return services
 
 
 def build_digest_for_checkpoint(
