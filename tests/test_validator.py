@@ -95,7 +95,12 @@ def test_parameter_before_equals_after_with_reason_accepted() -> None:
     outcome = validate_candidates(
         [
             candidate(
-                payload={"name": "X", "before": "1", "after": "1", "reason": "语义澄清：值不变，单位从秒改为毫秒读法"}
+                payload={
+                    "name": "X",
+                    "before": "1",
+                    "after": "1",
+                    "reason": "语义澄清：值不变，单位从秒改为毫秒读法",
+                }
             )
         ],
         context(),
