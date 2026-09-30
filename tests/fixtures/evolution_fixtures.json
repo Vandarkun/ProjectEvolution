@@ -1,0 +1,1489 @@
+[
+  {
+    "id": "P-01",
+    "task_title": "增加窗口透明度",
+    "checkpoint_summary": "调整最低透明度",
+    "hunks": [
+      {
+        "path": "Core/WindowOpacityService.cs",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-    private const double OpacityMin = 0.2;\n+    private const double OpacityMin = 0.3;\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [
+      "调整最低透明度常量"
+    ],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "parameter_change",
+        "name": "OpacityMin",
+        "before": "0.2",
+        "after": "0.3"
+      }
+    ]
+  },
+  {
+    "id": "P-02",
+    "task_title": "提升重试稳定性",
+    "checkpoint_summary": "重试次数上调",
+    "hunks": [
+      {
+        "path": "src/client.py",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-MAX_RETRIES = 3\n+MAX_RETRIES = 5\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "parameter_change",
+        "name": "MAX_RETRIES",
+        "before": "3",
+        "after": "5"
+      }
+    ]
+  },
+  {
+    "id": "P-03",
+    "task_title": "服务端口迁移",
+    "checkpoint_summary": "端口变更",
+    "hunks": [
+      {
+        "path": "config/server.yaml",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-port: 8080\n+port: 9090\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "parameter_change",
+        "name": "port",
+        "before": "8080",
+        "after": "9090"
+      }
+    ]
+  },
+  {
+    "id": "P-04",
+    "task_title": "API 超时调整",
+    "checkpoint_summary": "超时翻倍",
+    "hunks": [
+      {
+        "path": "src/api.js",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-const API_TIMEOUT_MS = 5000;\n+const API_TIMEOUT_MS = 10000;\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "parameter_change",
+        "name": "API_TIMEOUT_MS",
+        "before": "5000",
+        "after": "10000"
+      }
+    ]
+  },
+  {
+    "id": "P-05",
+    "task_title": "快捷键冲突处理",
+    "checkpoint_summary": "更换快捷键",
+    "hunks": [
+      {
+        "path": "Core/Hotkey.cs",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-    public static readonly string Hotkey = \"Ctrl+Wheel\";\n+    public static readonly string Hotkey = \"Alt+Wheel\";\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "parameter_change",
+        "name": "Hotkey",
+        "before": "Ctrl+Wheel",
+        "after": "Alt+Wheel"
+      }
+    ]
+  },
+  {
+    "id": "P-06",
+    "task_title": "批处理吞吐优化",
+    "checkpoint_summary": "批大小调整",
+    "hunks": [
+      {
+        "path": "pipeline/batch.go",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-const BatchSize = 100\n+const BatchSize = 250\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "parameter_change",
+        "name": "BatchSize",
+        "before": "100",
+        "after": "250"
+      }
+    ]
+  },
+  {
+    "id": "P-07",
+    "task_title": "连接池扩容",
+    "checkpoint_summary": "池大小调整",
+    "hunks": [
+      {
+        "path": "src/Pool.java",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-    private static final int POOL_SIZE = 10;\n+    private static final int POOL_SIZE = 20;\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "parameter_change",
+        "name": "POOL_SIZE",
+        "before": "10",
+        "after": "20"
+      }
+    ]
+  },
+  {
+    "id": "P-08",
+    "task_title": "本地化默认值",
+    "checkpoint_summary": "默认语言调整",
+    "hunks": [
+      {
+        "path": "src/i18n.py",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-DEFAULT_LOCALE = \"en-US\"\n+DEFAULT_LOCALE = \"zh-CN\"\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "parameter_change",
+        "name": "DEFAULT_LOCALE",
+        "before": "en-US",
+        "after": "zh-CN"
+      }
+    ]
+  },
+  {
+    "id": "P-09",
+    "task_title": "窗口最大宽度调整",
+    "checkpoint_summary": "宽度上限变化",
+    "hunks": [
+      {
+        "path": "config/display.toml",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-max_width = 1920\n+max_width = 2560\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "parameter_change",
+        "name": "max_width",
+        "before": "1920",
+        "after": "2560"
+      }
+    ]
+  },
+  {
+    "id": "P-10",
+    "task_title": "历史深度扩展",
+    "checkpoint_summary": "历史记录加深",
+    "hunks": [
+      {
+        "path": "Core/HistoryService.cs",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-        private const int HistoryDepth = 30;\n+        private const int HistoryDepth = 60;\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "parameter_change",
+        "name": "HistoryDepth",
+        "before": "30",
+        "after": "60"
+      }
+    ]
+  },
+  {
+    "id": "P-11",
+    "task_title": "缓存策略调整",
+    "checkpoint_summary": "TTL 延长",
+    "hunks": [
+      {
+        "path": "src/cache.py",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-CACHE_TTL_SECONDS = 300\n+CACHE_TTL_SECONDS = 900\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "parameter_change",
+        "name": "CACHE_TTL_SECONDS",
+        "before": "300",
+        "after": "900"
+      }
+    ]
+  },
+  {
+    "id": "P-12",
+    "task_title": "日志级别调整",
+    "checkpoint_summary": "排查问题需要更详细日志",
+    "hunks": [
+      {
+        "path": "config/app.yaml",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-log_level: info\n+log_level: debug\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "parameter_change",
+        "name": "log_level",
+        "before": "info",
+        "after": "debug"
+      }
+    ]
+  },
+  {
+    "id": "P-13",
+    "task_title": "分页大小调整",
+    "checkpoint_summary": "列表分页变化",
+    "hunks": [
+      {
+        "path": "src/paging.js",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-export const PAGE_SIZE = 20;\n+export const PAGE_SIZE = 50;\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "parameter_change",
+        "name": "PAGE_SIZE",
+        "before": "20",
+        "after": "50"
+      }
+    ]
+  },
+  {
+    "id": "P-14",
+    "task_title": "滚轮步进调整",
+    "checkpoint_summary": "步进更细",
+    "hunks": [
+      {
+        "path": "src/wheel.py",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-WHEEL_STEP = 5\n+WHEEL_STEP = 3\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "parameter_change",
+        "name": "WHEEL_STEP",
+        "before": "5",
+        "after": "3"
+      }
+    ]
+  },
+  {
+    "id": "P-15",
+    "task_title": "主题切换",
+    "checkpoint_summary": "默认主题变化",
+    "hunks": [
+      {
+        "path": "Core/Theme.cs",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-internal const string DefaultTheme = \"light\";\n+internal const string DefaultTheme = \"dark\";\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "parameter_change",
+        "name": "DefaultTheme",
+        "before": "light",
+        "after": "dark"
+      }
+    ]
+  },
+  {
+    "id": "P-16",
+    "task_title": "重试策略收紧",
+    "checkpoint_summary": "重试减少",
+    "hunks": [
+      {
+        "path": "config/jobs.yaml",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-retries: 2\n+retries: 4\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "parameter_change",
+        "name": "retries",
+        "before": "2",
+        "after": "4"
+      }
+    ]
+  },
+  {
+    "id": "P-17",
+    "task_title": "特性开关",
+    "checkpoint_summary": "打开特性",
+    "hunks": [
+      {
+        "path": "src/flags.js",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-const FEATURE_FLAGS = \"off\";\n+const FEATURE_FLAGS = \"on\";\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "parameter_change",
+        "name": "FEATURE_FLAGS",
+        "before": "off",
+        "after": "on"
+      }
+    ]
+  },
+  {
+    "id": "P-18",
+    "task_title": "存储引擎更换",
+    "checkpoint_summary": "引擎切换",
+    "hunks": [
+      {
+        "path": "src/Store.java",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-    private static final String STORAGE_ENGINE = \"sqlite\";\n+    private static final String STORAGE_ENGINE = \"duckdb\";\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "parameter_change",
+        "name": "STORAGE_ENGINE",
+        "before": "sqlite",
+        "after": "duckdb"
+      }
+    ]
+  },
+  {
+    "id": "P-19",
+    "task_title": "缓冲区调整",
+    "checkpoint_summary": "INI 缓冲变化",
+    "hunks": [
+      {
+        "path": "config/runtime.ini",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-buffer_size=4096\n+buffer_size=8192\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "parameter_change",
+        "name": "buffer_size",
+        "before": "4096",
+        "after": "8192"
+      }
+    ]
+  },
+  {
+    "id": "P-20",
+    "task_title": "平滑系数调整",
+    "checkpoint_summary": "EMA 更平滑",
+    "hunks": [
+      {
+        "path": "Core/Smoother.cs",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-        const double EmaAlpha = 0.2;\n+        const double EmaAlpha = 0.35;\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "parameter_change",
+        "name": "EmaAlpha",
+        "before": "0.2",
+        "after": "0.35"
+      }
+    ]
+  },
+  {
+    "id": "F-01",
+    "task_title": "实现外部窗口透明度",
+    "checkpoint_summary": "核心逻辑完成",
+    "hunks": [
+      {
+        "path": "Core/WindowOpacityService.cs",
+        "header": "@@ -0,0 +1,3 @@",
+        "content": "+class WindowOpacityService:\n+    def set_opacity(self, window, value):\n+        ...\n"
+      }
+    ],
+    "added_files": [
+      "Core/WindowOpacityService.cs"
+    ],
+    "agent_summaries": [
+      "新增能力: 外部窗口透明度调节"
+    ],
+    "test_results": [
+      {
+        "command": "dotnet build",
+        "status": "passed"
+      }
+    ],
+    "expected": [
+      {
+        "type": "feature_change",
+        "feature": "外部窗口透明度调节"
+      }
+    ]
+  },
+  {
+    "id": "F-02",
+    "task_title": "支持 CSV 导出",
+    "checkpoint_summary": "导出器完成",
+    "hunks": [
+      {
+        "path": "src/export/csv_exporter.py",
+        "header": "@@ -0,0 +1,2 @@",
+        "content": "+def export_csv(rows, path):\n+    ...\n"
+      }
+    ],
+    "added_files": [
+      "src/export/csv_exporter.py"
+    ],
+    "agent_summaries": [
+      "新增能力: CSV 导出"
+    ],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "feature_change",
+        "feature": "CSV 导出"
+      }
+    ]
+  },
+  {
+    "id": "F-03",
+    "task_title": "接入 OAuth 登录",
+    "checkpoint_summary": "登录链路完成",
+    "hunks": [
+      {
+        "path": "src/auth/oauth_login.py",
+        "header": "@@ -0,0 +1,2 @@",
+        "content": "+class OAuthLogin:\n+    ...\n"
+      }
+    ],
+    "added_files": [
+      "src/auth/oauth_login.py"
+    ],
+    "agent_summaries": [
+      "新增能力: OAuth 登录"
+    ],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "feature_change",
+        "feature": "OAuth 登录"
+      }
+    ]
+  },
+  {
+    "id": "F-04",
+    "task_title": "全局快捷键管理",
+    "checkpoint_summary": "管理器完成",
+    "hunks": [
+      {
+        "path": "Core/HotkeyManager.cs",
+        "header": "@@ -0,0 +1,3 @@",
+        "content": "+class HotkeyManager\n+{\n+}\n"
+      }
+    ],
+    "added_files": [
+      "Core/HotkeyManager.cs"
+    ],
+    "agent_summaries": [
+      "新增能力: 全局快捷键管理"
+    ],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "feature_change",
+        "feature": "全局快捷键管理"
+      }
+    ]
+  },
+  {
+    "id": "F-05",
+    "task_title": "模糊搜索",
+    "checkpoint_summary": "搜索核心完成",
+    "hunks": [
+      {
+        "path": "src/search/fuzzy_search.py",
+        "header": "@@ -0,0 +1,2 @@",
+        "content": "+def fuzzy_match(query, text):\n+    ...\n"
+      }
+    ],
+    "added_files": [
+      "src/search/fuzzy_search.py"
+    ],
+    "agent_summaries": [
+      "新增能力: 模糊搜索"
+    ],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "feature_change",
+        "feature": "模糊搜索"
+      }
+    ]
+  },
+  {
+    "id": "F-06",
+    "task_title": "webhook 接收",
+    "checkpoint_summary": "接收端完成",
+    "hunks": [
+      {
+        "path": "api/webhook_receiver.py",
+        "header": "@@ -0,0 +1,2 @@",
+        "content": "+async def receive(request):\n+    ...\n"
+      }
+    ],
+    "added_files": [
+      "api/webhook_receiver.py"
+    ],
+    "agent_summaries": [
+      "feature: webhook 接收器"
+    ],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "feature_change",
+        "feature": "webhook 接收器"
+      }
+    ]
+  },
+  {
+    "id": "F-07",
+    "task_title": "音量混音",
+    "checkpoint_summary": "混音器完成",
+    "hunks": [
+      {
+        "path": "Core/AudioMixer.cs",
+        "header": "@@ -0,0 +1,3 @@",
+        "content": "+class AudioMixer\n+{\n+}\n"
+      }
+    ],
+    "added_files": [
+      "Core/AudioMixer.cs"
+    ],
+    "agent_summaries": [
+      "新增能力: 音量混音"
+    ],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "feature_change",
+        "feature": "音量混音"
+      }
+    ]
+  },
+  {
+    "id": "F-08",
+    "task_title": "定时备份",
+    "checkpoint_summary": "备份模块完成（无标记，测试保守推断路径）",
+    "hunks": [
+      {
+        "path": "src/backup/scheduled_backup.py",
+        "header": "@@ -0,0 +1,2 @@",
+        "content": "+def run_backup(schedule):\n+    ...\n"
+      }
+    ],
+    "added_files": [
+      "src/backup/scheduled_backup.py"
+    ],
+    "agent_summaries": [
+      "添加了定时备份"
+    ],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "feature_change",
+        "feature": "scheduled_backup"
+      }
+    ]
+  },
+  {
+    "id": "F-09",
+    "task_title": "命令面板",
+    "checkpoint_summary": "面板骨架完成",
+    "hunks": [
+      {
+        "path": "ui/command_palette.py",
+        "header": "@@ -0,0 +1,2 @@",
+        "content": "+class CommandPalette:\n+    ...\n"
+      }
+    ],
+    "added_files": [
+      "ui/command_palette.py"
+    ],
+    "agent_summaries": [
+      "feature: 命令面板"
+    ],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "feature_change",
+        "feature": "命令面板"
+      }
+    ]
+  },
+  {
+    "id": "F-10",
+    "task_title": "剪贴板历史",
+    "checkpoint_summary": "历史记录完成",
+    "hunks": [
+      {
+        "path": "Core/ClipboardHistory.cs",
+        "header": "@@ -0,0 +1,3 @@",
+        "content": "+class ClipboardHistory\n+{\n+}\n"
+      }
+    ],
+    "added_files": [
+      "Core/ClipboardHistory.cs"
+    ],
+    "agent_summaries": [
+      "新增能力: 剪贴板历史"
+    ],
+    "test_results": [
+      {
+        "command": "dotnet test",
+        "status": "passed"
+      }
+    ],
+    "expected": [
+      {
+        "type": "feature_change",
+        "feature": "剪贴板历史"
+      }
+    ]
+  },
+  {
+    "id": "D-01",
+    "task_title": "窗口透明度快捷键选型",
+    "checkpoint_summary": "快捷键确定",
+    "hunks": [],
+    "added_files": [],
+    "agent_summaries": [
+      "决策: 快捷键改用 Alt+Wheel 而不是 Ctrl+Wheel"
+    ],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "decision",
+        "subject": "窗口透明度快捷键选型"
+      }
+    ]
+  },
+  {
+    "id": "D-02",
+    "task_title": "存储方案选型",
+    "checkpoint_summary": "存储确定",
+    "hunks": [],
+    "added_files": [],
+    "agent_summaries": [
+      "决策: 存储选用本地 SQLite 而不是云存储"
+    ],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "decision",
+        "subject": "存储方案选型"
+      }
+    ]
+  },
+  {
+    "id": "D-03",
+    "task_title": "模型部署选型",
+    "checkpoint_summary": "部署确定",
+    "hunks": [],
+    "added_files": [],
+    "agent_summaries": [
+      "decision: use local Ollama instead of cloud API"
+    ],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "decision",
+        "subject": "模型部署选型"
+      }
+    ]
+  },
+  {
+    "id": "D-04",
+    "task_title": "UI 框架去留",
+    "checkpoint_summary": "框架确定",
+    "hunks": [],
+    "added_files": [],
+    "agent_summaries": [
+      "决策: UI 框架维持 WPF 而不是迁移 WinUI3"
+    ],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "decision",
+        "subject": "UI 框架去留"
+      }
+    ]
+  },
+  {
+    "id": "D-05",
+    "task_title": "线程调度约定",
+    "checkpoint_summary": "调度方案确定",
+    "hunks": [],
+    "added_files": [],
+    "agent_summaries": [
+      "决策: 窗口查询调度到 UI 线程"
+    ],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "decision",
+        "subject": "线程调度约定"
+      }
+    ]
+  },
+  {
+    "id": "D-06",
+    "task_title": "日志格式约定",
+    "checkpoint_summary": "格式确定",
+    "hunks": [],
+    "added_files": [],
+    "agent_summaries": [
+      "决定: 日志格式改为结构化 JSON"
+    ],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "decision",
+        "subject": "日志格式约定"
+      }
+    ]
+  },
+  {
+    "id": "D-07",
+    "task_title": "配置格式统一",
+    "checkpoint_summary": "格式确定",
+    "hunks": [],
+    "added_files": [],
+    "agent_summaries": [
+      "决策: 配置文件统一 YAML 而不是 TOML"
+    ],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "decision",
+        "subject": "配置格式统一"
+      }
+    ]
+  },
+  {
+    "id": "D-08",
+    "task_title": "仓库布局约定",
+    "checkpoint_summary": "布局确定",
+    "hunks": [],
+    "added_files": [],
+    "agent_summaries": [
+      "decision: monorepo over multi-repo"
+    ],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "decision",
+        "subject": "仓库布局约定"
+      }
+    ]
+  },
+  {
+    "id": "D-09",
+    "task_title": "发布渠道选型",
+    "checkpoint_summary": "渠道确定",
+    "hunks": [],
+    "added_files": [],
+    "agent_summaries": [
+      "决策: 发布渠道切换到自有服务器"
+    ],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "decision",
+        "subject": "发布渠道选型"
+      }
+    ]
+  },
+  {
+    "id": "D-10",
+    "task_title": "测试框架迁移",
+    "checkpoint_summary": "框架确定",
+    "hunks": [],
+    "added_files": [],
+    "agent_summaries": [
+      "决定: 测试框架从 unittest 迁移到 pytest"
+    ],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "decision",
+        "subject": "测试框架迁移"
+      }
+    ]
+  },
+  {
+    "id": "B-01",
+    "task_title": "修复输入卡顿",
+    "checkpoint_summary": "hook 回调修复",
+    "hunks": [
+      {
+        "path": "Core/MouseHook.cs",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-            var window = Win32.GetForegroundWindow();\n+            _ui.Dispatch(() => {\n+                var window = Win32.GetForegroundWindow();\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [
+      "问题: Hook 回调中窗口查询造成输入卡顿; 原因: 同步窗口调用阻塞 Hook 线程; 修复: 将窗口操作调度到 UI 线程"
+    ],
+    "test_results": [
+      {
+        "command": "dotnet build",
+        "status": "passed"
+      }
+    ],
+    "expected": [
+      {
+        "type": "bug_fix",
+        "problem": "Hook 回调中窗口查询造成输入卡顿"
+      }
+    ]
+  },
+  {
+    "id": "B-02",
+    "task_title": "修复崩溃",
+    "checkpoint_summary": "空引用修复",
+    "hunks": [
+      {
+        "path": "src/render.py",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-    return cache[key].draw()\n+    entry = cache.get(key)\n+    return entry.draw() if entry else None\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [
+      "问题: 首帧渲染崩溃; 原因: cache 未初始化时直接下标访问; 修复: 使用 get 并判空"
+    ],
+    "test_results": [
+      {
+        "command": "pytest",
+        "status": "passed"
+      }
+    ],
+    "expected": [
+      {
+        "type": "bug_fix",
+        "problem": "首帧渲染崩溃"
+      }
+    ]
+  },
+  {
+    "id": "B-03",
+    "task_title": "修复时区错误",
+    "checkpoint_summary": "时间处理修复",
+    "hunks": [
+      {
+        "path": "src/time_util.py",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-        return datetime.utcnow().isoformat()\n+        return datetime.now(timezone.utc).isoformat()\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [
+      "problem: 导出的时间戳差 8 小时; cause: 使用 naive utcnow 缺少时区; fix: 改用带时区的 now(timezone.utc)"
+    ],
+    "test_results": [
+      {
+        "command": "pytest",
+        "status": "passed"
+      }
+    ],
+    "expected": [
+      {
+        "type": "bug_fix",
+        "problem": "导出的时间戳差 8 小时"
+      }
+    ]
+  },
+  {
+    "id": "B-04",
+    "task_title": "修复内存泄漏",
+    "checkpoint_summary": "事件解绑",
+    "hunks": [
+      {
+        "path": "Core/TrayIcon.cs",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-        // no disposal\n+        _hook.Click -= OnClick;\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [
+      "问题: 托盘图标重复创建后内存上涨; 原因: 事件未解绑; 修复: 释放前解绑 Click"
+    ],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "bug_fix",
+        "problem": "托盘图标重复创建后内存上涨"
+      }
+    ]
+  },
+  {
+    "id": "B-05",
+    "task_title": "修复并发写损坏",
+    "checkpoint_summary": "加锁修复",
+    "hunks": [
+      {
+        "path": "src/writer.py",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-        self.file.write(line)\n+        with self.lock:\n+            self.file.write(line)\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [
+      "问题: 并发写入后文件出现交叉行; 原因: 无互斥; 修复: 写入加互斥锁"
+    ],
+    "test_results": [
+      {
+        "command": "pytest -k writer",
+        "status": "passed"
+      }
+    ],
+    "expected": [
+      {
+        "type": "bug_fix",
+        "problem": "并发写入后文件出现交叉行"
+      }
+    ]
+  },
+  {
+    "id": "B-06",
+    "task_title": "修复路径解析",
+    "checkpoint_summary": "分隔符修复",
+    "hunks": [
+      {
+        "path": "src/paths.py",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-    return base + \"\\\\\" + name\n+    return base + \"/\" + name\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [
+      "问题: 非 Windows 平台无法加载资源; 原因: 硬编码反斜杠; 修复: 统一使用 posix 分隔符"
+    ],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "bug_fix",
+        "problem": "非 Windows 平台无法加载资源"
+      }
+    ]
+  },
+  {
+    "id": "B-07",
+    "task_title": "修复快捷键失灵",
+    "checkpoint_summary": "注册时机修复",
+    "hunks": [
+      {
+        "path": "Core/Hotkey.cs",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-        RegisterHotkey(Handle);\n+        _dispatcher.Invoke(() => RegisterHotkey(Handle));\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [
+      "problem: 睡眠唤醒后快捷键失灵; cause: 句柄失效后未重新注册; fix: 唤醒事件里重新注册"
+    ],
+    "test_results": [
+      {
+        "command": "dotnet test",
+        "status": "passed"
+      }
+    ],
+    "expected": [
+      {
+        "type": "bug_fix",
+        "problem": "睡眠唤醒后快捷键失灵"
+      }
+    ]
+  },
+  {
+    "id": "B-08",
+    "task_title": "修复乱码",
+    "checkpoint_summary": "编码修复",
+    "hunks": [
+      {
+        "path": "src/io_util.py",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-    open(path)\n+    open(path, encoding=\"utf-8\")\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [
+      "问题: 中文配置读取乱码; 原因: 默认编码跟随系统区域; 修复: 显式 utf-8"
+    ],
+    "test_results": [
+      {
+        "command": "pytest",
+        "status": "passed"
+      }
+    ],
+    "expected": [
+      {
+        "type": "bug_fix",
+        "problem": "中文配置读取乱码"
+      }
+    ]
+  },
+  {
+    "id": "B-09",
+    "task_title": "修复无限重试",
+    "checkpoint_summary": "退避修复",
+    "hunks": [
+      {
+        "path": "src/retry.py",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-        return attempt(backoff=0)\n+        return attempt(backoff=min(2 ** n, 60))\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [
+      "问题: 下游故障时请求风暴; 原因: 重试无退避; 修复: 指数退避并封顶"
+    ],
+    "test_results": [],
+    "expected": [
+      {
+        "type": "bug_fix",
+        "problem": "下游故障时请求风暴"
+      }
+    ]
+  },
+  {
+    "id": "B-10",
+    "task_title": "修复排序不稳定",
+    "checkpoint_summary": "稳定排序修复",
+    "hunks": [
+      {
+        "path": "src/sort_util.py",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-    items.sort(key=rank)\n+    items.sort(key=lambda i: (rank(i), i.name))\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [
+      "问题: 同名条目顺序每次刷新都变; 原因: sort 不稳定且 key 缺次级字段; 修复: 补次级排序键"
+    ],
+    "test_results": [
+      {
+        "command": "pytest -k sort",
+        "status": "passed"
+      }
+    ],
+    "expected": [
+      {
+        "type": "bug_fix",
+        "problem": "同名条目顺序每次刷新都变"
+      }
+    ]
+  },
+  {
+    "id": "N-01",
+    "task_title": "代码整理",
+    "checkpoint_summary": "变量重命名",
+    "hunks": [
+      {
+        "path": "src/calc.py",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-    total_count = 5\n+    total_items = 5\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [
+      "局部变量重命名"
+    ],
+    "test_results": [],
+    "expected": []
+  },
+  {
+    "id": "N-02",
+    "task_title": "格式化",
+    "checkpoint_summary": "缩进统一",
+    "hunks": [
+      {
+        "path": "src/calc.py",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-  def run():\n-      return 1\n+    def run():\n+        return 1\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": []
+  },
+  {
+    "id": "N-03",
+    "task_title": "注释补充",
+    "checkpoint_summary": "说明性注释",
+    "hunks": [
+      {
+        "path": "src/calc.py",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "+    # 计算总额，注意不含税费\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": []
+  },
+  {
+    "id": "N-04",
+    "task_title": "补充测试",
+    "checkpoint_summary": "测试覆盖",
+    "hunks": [
+      {
+        "path": "tests/test_calc.py",
+        "header": "@@ -0,0 +1,2 @@",
+        "content": "+def test_run():\n+    assert run() == 1\n"
+      }
+    ],
+    "added_files": [
+      "tests/test_calc.py"
+    ],
+    "agent_summaries": [
+      "补充单元测试"
+    ],
+    "test_results": [],
+    "expected": []
+  },
+  {
+    "id": "N-05",
+    "task_title": "拼写修正",
+    "checkpoint_summary": "提示文案拼写",
+    "hunks": [
+      {
+        "path": "src/msg.py",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-    msg = \"recieve failed\"\n+    msg = \"receive failed\"\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": []
+  },
+  {
+    "id": "N-06",
+    "task_title": "文档更新",
+    "checkpoint_summary": "README 调整",
+    "hunks": [
+      {
+        "path": "README.md",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-## Usage\n+## Usage\n+\n+See docs for details.\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": []
+  },
+  {
+    "id": "N-07",
+    "task_title": "文档字符串",
+    "checkpoint_summary": "docstring 扩充",
+    "hunks": [
+      {
+        "path": "src/calc.py",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-    \"\"\"calc.\"\"\"\n+    \"\"\"计算总额。\n+\n+    不含税费。\n+    \"\"\"\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": []
+  },
+  {
+    "id": "N-08",
+    "task_title": "重构：提取函数",
+    "checkpoint_summary": "无行为变化",
+    "hunks": [
+      {
+        "path": "src/report.py",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-    header = build_header()\n-    body = build_body()\n-    return header + body\n+    return _build_report()\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [
+      "纯重构，行为不变"
+    ],
+    "test_results": [],
+    "expected": []
+  },
+  {
+    "id": "N-09",
+    "task_title": "导入排序",
+    "checkpoint_summary": "isort 结果",
+    "hunks": [
+      {
+        "path": "src/app.py",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-import sys\n-import os\n+import os\n+import sys\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": []
+  },
+  {
+    "id": "N-10",
+    "task_title": "日志文案微调",
+    "checkpoint_summary": "措辞变化",
+    "hunks": [
+      {
+        "path": "src/app.py",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-logger.info(\"Processing\")\n+logger.info(\"Processing item\")\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": []
+  },
+  {
+    "id": "N-11",
+    "task_title": "gitignore 补充",
+    "checkpoint_summary": "忽略规则",
+    "hunks": [
+      {
+        "path": ".gitignore",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "+.DS_Store\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": []
+  },
+  {
+    "id": "N-12",
+    "task_title": "样式微调",
+    "checkpoint_summary": "颜色值变化（UI 文案层）",
+    "hunks": [
+      {
+        "path": "ui/theme.css",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-.warn { color: red; }\n+.warn { color: crimson; }\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": []
+  },
+  {
+    "id": "N-13",
+    "task_title": "版本号更新",
+    "checkpoint_summary": "发布版本",
+    "hunks": [
+      {
+        "path": "src/__init__.py",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-__version__ = \"0.2.0\"\n+__version__ = \"0.3.0\"\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": []
+  },
+  {
+    "id": "N-14",
+    "task_title": "死代码清理",
+    "checkpoint_summary": "删除未用分支",
+    "hunks": [
+      {
+        "path": "src/legacy.py",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-    if False:\n-        legacy_path()\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": []
+  },
+  {
+    "id": "N-15",
+    "task_title": "循环变量重命名",
+    "checkpoint_summary": "命名改进",
+    "hunks": [
+      {
+        "path": "src/loop.py",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-    for i in range(10):\n-        print(i)\n+    for idx in range(10):\n+        print(idx)\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": []
+  },
+  {
+    "id": "N-16",
+    "task_title": "类型标注补充",
+    "checkpoint_summary": "标注加严",
+    "hunks": [
+      {
+        "path": "src/typed.py",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-def add(a, b):\n+def add(a: int, b: int) -> int:\n+    ...\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": []
+  },
+  {
+    "id": "N-17",
+    "task_title": "错误提示澄清",
+    "checkpoint_summary": "提示更明确",
+    "hunks": [
+      {
+        "path": "src/errors.py",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-    raise ValueError(\"bad input\")\n+    raise ValueError(\"bad input: expected a positive number\")\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": []
+  },
+  {
+    "id": "N-18",
+    "task_title": "界面文案调整",
+    "checkpoint_summary": "按钮文字",
+    "hunks": [
+      {
+        "path": "ui/strings.json",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-  \"ok\": \"OK\"\n+  \"ok\": \"Confirm\"\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [
+      "按钮文案调整"
+    ],
+    "test_results": [],
+    "expected": []
+  },
+  {
+    "id": "N-19",
+    "task_title": "大括号风格",
+    "checkpoint_summary": "代码风格",
+    "hunks": [
+      {
+        "path": "src/braces.ts",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-if (x) { return 1; }\n+if (x) {\n+  return 1;\n+}\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": []
+  },
+  {
+    "id": "N-20",
+    "task_title": "测试数据更新",
+    "checkpoint_summary": "fixture 数据",
+    "hunks": [
+      {
+        "path": "tests/data/cases.json",
+        "header": "@@ -10,7 +10,7 @@",
+        "content": "-  ]\n+    \"case-7\",\n+  ]\n"
+      }
+    ],
+    "added_files": [],
+    "agent_summaries": [],
+    "test_results": [],
+    "expected": []
+  }
+]
