@@ -51,6 +51,7 @@ from project_evolution.evolution.change_digest import (
     DigestTestResult,
 )
 from project_evolution.evolution.dedup import dedup_candidates
+from project_evolution.evolution.pending import PendingAnalysis, PendingStore
 from project_evolution.evolution.prompt import PROMPT_VERSION
 from project_evolution.evolution.validator import (
     Rejection,
@@ -98,6 +99,18 @@ class AnalysisRecord(BaseModel):
     event_ids: list[str] = Field(default_factory=list)
     provider: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class PendingRetryResult(BaseModel):
+    """retry_pending() 的单项结果：成功带 outcome，失败带 error。"""
+
+    pending: PendingAnalysis
+    outcome: AnalysisOutcome | None = None
+    error: str | None = None
+
+    @property
+    def succeeded(self) -> bool:
+        return self.error is None
 
 
 class AnalysisRecordStore:
@@ -181,6 +194,7 @@ class EvolutionAnalyzerService:
             )
         )
         self._records = AnalysisRecordStore(self._root, runtime_dir=self._config.runtime_dir)
+        self.pending = PendingStore(self._root, runtime_dir=self._config.runtime_dir)
         self.provider = provider
 
     # ---------------------------------------------------------------- public
@@ -188,6 +202,23 @@ class EvolutionAnalyzerService:
     def analyze_checkpoint(self, task_id: str, checkpoint_id: str) -> AnalysisOutcome:
         """同步执行完整闭环（CLI / 测试场景；默认产品路径是后台异步 worker）。"""
         return asyncio.run(self.analyze_checkpoint_async(task_id, checkpoint_id))
+
+    def retry_pending(self) -> list[PendingRetryResult]:
+        """重试全部待重试分析（phase-05 §9）；成功清除记录，失败保留并累加 attempts。"""
+        results: list[PendingRetryResult] = []
+        for record in self.pending.list_pending():
+            try:
+                outcome = self.analyze_checkpoint(record.task_id, record.checkpoint_id)
+            except PelError as exc:
+                results.append(
+                    PendingRetryResult(
+                        pending=record,
+                        error=f"{type(exc).__name__}: {exc}",
+                    )
+                )
+                continue
+            results.append(PendingRetryResult(pending=record, outcome=outcome))
+        return results
 
     async def analyze_checkpoint_async(
         self, task_id: str, checkpoint_id: str
@@ -197,6 +228,7 @@ class EvolutionAnalyzerService:
 
         existing = self.ledger.find_batch(analysis_key)
         if existing:
+            self.pending.remove_for_checkpoint(task_id, checkpoint_id)
             return AnalysisOutcome(
                 analysis_id=existing[0].analysis_batch_id,
                 analysis_key=analysis_key,
@@ -206,6 +238,7 @@ class EvolutionAnalyzerService:
             )
         cached = self._records.find(analysis_key)
         if cached is not None and cached.status == "noop":
+            self.pending.remove_for_checkpoint(task_id, checkpoint_id)
             return AnalysisOutcome(
                 analysis_id=cached.analysis_id,
                 analysis_key=analysis_key,
@@ -217,10 +250,27 @@ class EvolutionAnalyzerService:
         analysis_id = new_id("ANL")
         try:
             response = await self.provider.analyze(request)
-        except PelError:
+        except PelError as exc:
+            # 模型失败：事实与证据已在 Raw Ledger，语义分析转 pending（§9）
+            self._save_pending(
+                analysis_id=analysis_id,
+                analysis_key=analysis_key,
+                task_id=task_id,
+                checkpoint_id=checkpoint_id,
+                error=f"{type(exc).__name__}: {exc}",
+                kind=getattr(exc, "kind", "error"),
+            )
             raise
         except Exception as exc:  # noqa: BLE001 - Provider 实现的意外异常统一进 pending
             provider_name = getattr(self.provider, "name", "?")
+            self._save_pending(
+                analysis_id=analysis_id,
+                analysis_key=analysis_key,
+                task_id=task_id,
+                checkpoint_id=checkpoint_id,
+                error=f"{type(exc).__name__}: {exc}",
+                kind="error",
+            )
             raise AnalysisError(f"provider {provider_name} failed: {exc}") from exc
 
         validated = validate_candidates(response.events, context)
@@ -264,9 +314,41 @@ class EvolutionAnalyzerService:
                 provider=outcome.provider,
             )
         )
+        self.pending.remove_for_checkpoint(task_id, checkpoint_id)
         return outcome
 
     # ---------------------------------------------------------------- inside
+
+    def _save_pending(
+        self,
+        *,
+        analysis_id: str,
+        analysis_key: str,
+        task_id: str,
+        checkpoint_id: str,
+        error: str,
+        kind: str,
+    ) -> None:
+        """失败入 pending：同 analysis_key 的重复失败更新原记录（attempts 递增）。"""
+        record = self.pending.find_by_key(analysis_key)
+        if record is None:
+            record = PendingAnalysis(
+                analysis_id=analysis_id,
+                analysis_key=analysis_key,
+                task_id=task_id,
+                checkpoint_id=checkpoint_id,
+                provider=getattr(self.provider, "name", "?"),
+            )
+        record = record.model_copy(
+            update={
+                "last_error": error,
+                "last_error_kind": kind,
+                "provider": getattr(self.provider, "name", record.provider),
+                "task_id": task_id,
+                "checkpoint_id": checkpoint_id,
+            }
+        )
+        self.pending.save(record)
 
     def _prepare(
         self, task_id: str, checkpoint_id: str
