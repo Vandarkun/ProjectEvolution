@@ -86,6 +86,18 @@ class SelectedHunk(BaseModel):
     content: str
 
 
+class DigestEvidence(BaseModel):
+    """本 Checkpoint 产生的 Evidence 在 Digest 中的清单条目（05-evolution-analyzer.md §4）。
+
+    模型输出的 ``evidence_ids`` 只能从该清单中选择，Validator 强制执行子集校验；
+    清单之外的 Evidence ID 一律视为幻觉，拒绝。
+    """
+
+    id: str
+    type: str  # git_diff / test_result / raw_event / agent_summary ...
+    what: str = ""
+
+
 class ChangeDigest(BaseModel):
     """发往 Evolution Model 的确定性变更摘要。"""
 
@@ -107,6 +119,8 @@ class ChangeDigest(BaseModel):
     excluded: list[dict[str, str]] = Field(default_factory=list)
     #: normal / low / degraded（快照缺失或非 Git 时显式降级）
     scope_confidence: str = "normal"
+    #: 本 Checkpoint 的全部 Evidence（模型 evidence_ids 的唯一合法来源）
+    evidence: list[DigestEvidence] = Field(default_factory=list)
 
 
 def _category(path: str) -> int:
