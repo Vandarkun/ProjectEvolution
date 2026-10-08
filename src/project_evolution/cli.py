@@ -4,6 +4,8 @@ Phase 01：仅入口与 ``--version``。
 Phase 02：增加 ``pel doctor``，暴露 Ledger 的 integrity / repair 能力。
 Phase 05：增加 ``pel analyze``（同步语义分析，测试/CLI 场景）与
 ``pel retry-pending``（重试失败分析）；产品默认路径是后台异步 worker。
+Phase 06：增加 ``pel index rebuild``（SQLite 投影按 seq 全量重建，
+07-storage-and-index.md §4）。
 """
 
 from __future__ import annotations
@@ -50,6 +52,16 @@ def build_parser() -> argparse.ArgumentParser:
     retry.add_argument(
         "--json", dest="as_json", action="store_true", help="output machine-readable JSON"
     )
+
+    index = sub.add_parser("index", help="SQLite projection index (rebuild from ledgers)")
+    index_sub = index.add_subparsers(dest="index_command")
+    index_rebuild = index_sub.add_parser(
+        "rebuild", help="rebuild the SQLite projection by replaying ledgers in seq order"
+    )
+    index_rebuild.add_argument("--project", type=Path, default=Path.cwd(), help="project root")
+    index_rebuild.add_argument(
+        "--json", dest="as_json", action="store_true", help="output machine-readable JSON"
+    )
     return parser
 
 
@@ -80,6 +92,10 @@ def main(argv: list[str] | None = None) -> int:
         return _analyze(args)
     if args.command == "retry-pending":
         return _retry_pending(args)
+    if args.command == "index":
+        if args.index_command == "rebuild":
+            return _index_rebuild(args)
+        parser.error("index requires a subcommand (rebuild)")
     return 2  # argparse 只会产生已注册子命令，此处不可达
 
 
@@ -135,6 +151,33 @@ def _doctor(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
                 f"({repair.original_size} -> {repair.new_size}) {repair.message}"
             )
     return 0 if report.ok else 1
+
+
+def _index_rebuild(args: argparse.Namespace) -> int:
+    from project_evolution.errors import ConfigError, PelError, ProjectNotFoundError
+    from project_evolution.index import rebuild_projection
+
+    try:
+        if not args.project.is_dir():
+            raise ProjectNotFoundError(f"project root not found: {args.project}")
+        report = rebuild_projection(args.project)
+    except (ConfigError, ProjectNotFoundError, PelError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    if args.as_json:
+        print(report.model_dump_json(indent=2))
+    else:
+        print(f"projection: {report.db_path}")
+        print(
+            f"version={report.version} (was {report.previous_version}) "
+            f"in {report.duration_ms:.0f}ms"
+        )
+        for table, count in report.counts.items():
+            print(f"  {table}: {count}")
+        if report.removed_old_files:
+            print(f"cleaned {len(report.removed_old_files)} old projection file(s)")
+    return 0
 
 
 def _build_provider(args: argparse.Namespace):
