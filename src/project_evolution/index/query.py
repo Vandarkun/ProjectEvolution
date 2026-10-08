@@ -309,6 +309,29 @@ class QueryService:
 
     # ------------------------------------------------------------------ task
 
+    def list_active_tasks(self) -> list[TaskBrief]:
+        """非终态 Task（active/paused），按启动时间升序（get_project_state 用）。"""
+        conn = self._connect()
+        try:
+            rows = list(
+                conn.execute(
+                    "SELECT * FROM tasks WHERE status NOT IN ('completed', 'cancelled') "
+                    "ORDER BY started_at, task_id"
+                )
+            )
+        finally:
+            conn.close()
+        return [
+            TaskBrief(
+                task_id=row["task_id"],
+                title=row["title"],
+                status=row["status"],
+                started_at=_dt(row["started_at"]),
+                finished_at=_dt(row["finished_at"]) if row["finished_at"] else None,
+            )
+            for row in rows
+        ]
+
     def get_task_history(self, task_id: str) -> TaskHistory | None:
         conn = self._connect()
         try:

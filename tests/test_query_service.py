@@ -290,6 +290,14 @@ def test_feature_removed_means_absent(query_service: QueryService) -> None:
 # ------------------------------------------------------------------- task
 
 
+def test_list_active_tasks_excludes_terminal(query_service: QueryService) -> None:
+    """非终态 Task 列表（phase-07 get_project_state 输入）。"""
+    active = query_service.list_active_tasks()
+    assert [brief.task_id for brief in active] == ["TASK-1"]  # TASK-2 已 completed
+    assert active[0].status == "active"
+    assert active[0].title  # 携带标题
+
+
 def test_task_history_reconstructs_detail(query_service: QueryService) -> None:
     history = query_service.get_task_history("TASK-2")
     assert history is not None
