@@ -20,7 +20,6 @@ import pytest
 from project_evolution.index import (
     ProjectionNotBuiltError,
     QueryService,
-    rebuild_projection,
 )
 from project_evolution.ledger import EvolutionEventLedger, RawEventLedger
 from project_evolution.models import EvolutionEvent, RawEvent
@@ -225,13 +224,8 @@ def seed_event_stream(project: Path) -> list[str]:
     return [event.id for event in events]
 
 
-@pytest.fixture()
-def query_service(tmp_path: Path) -> QueryService:
-    project = tmp_path / "project"
-    project.mkdir()
-    seed_event_stream(project)
-    rebuild_projection(project)
-    return QueryService(project)
+# --------------------------------------------------------------- fixtures
+# query_service fixture 见 conftest.py（phase-08 起跨测试模块共享）
 
 
 # --------------------------------------------------------- current state §8

@@ -178,6 +178,28 @@ class FileHistory(BaseModel):
     evolution: list[EvolutionItem] = Field(default_factory=list)
 
 
+class FileSummary(BaseModel):
+    """关键 Changed Files 汇总行（Evolution Report §8）。"""
+
+    path: str
+    change_count: int
+    first_at: datetime
+    last_at: datetime
+
+
+class EvidenceRecord(BaseModel):
+    """Evidence 投影行（Dashboard 下钻入口；内容仍在 Evidence Store）。"""
+
+    evidence_id: str
+    type: str
+    ref: str
+    path: str | None = None
+    created_at: datetime
+    task_id: str | None = None
+    checkpoint_id: str | None = None
+    metadata: dict = Field(default_factory=dict)
+
+
 class ProjectionStatus(BaseModel):
     """SQLite 与 Ledger head 的同步标记（07 §13）。"""
 
@@ -189,6 +211,46 @@ class ProjectionStatus(BaseModel):
     ledger_evo_seq: int = 0
     stale: bool = False
     in_sync: bool = False
+
+
+#: Timeline 的合法 kind（phase-08 §6 筛选：Task/Feature/Parameter/Decision/
+#: Bug/Version + Checkpoint 折叠项；File Event 不进入 Timeline，10 §4）
+TIMELINE_KINDS = ("task", "checkpoint", "feature", "parameter", "decision", "bug", "version")
+
+#: evolution_events.type -> timeline kind
+_TYPE_TO_KIND = {
+    "feature_change": "feature",
+    "parameter_change": "parameter",
+    "decision": "decision",
+    "bug_fix": "bug",
+}
+
+
+def _canonical_timeline_kind(kind: str) -> str:
+    """接受短名与事件类型名（feature / feature_change 等），未知值报错。"""
+    value = kind.strip().lower()
+    if value in _TYPE_TO_KIND:
+        return _TYPE_TO_KIND[value]
+    if value in TIMELINE_KINDS:
+        return value
+    raise ValueError(f"unknown timeline kind {kind!r}; expected one of {TIMELINE_KINDS}")
+
+
+class TimelineItem(BaseModel):
+    """统一 Timeline 条目（10-timeline-and-query.md §4）。
+
+    混合 Task lifecycle / Checkpoint / Feature / Parameter / Decision /
+    BugFix / Version；低层 File Event 不出现在 Timeline（只在 Task Detail
+    展开）。``event_id`` 指向底层 Raw / Evolution 事件以便追溯。
+    """
+
+    timestamp: datetime
+    kind: str
+    title: str
+    summary: str
+    task_id: str | None
+    event_id: str
+    evidence_count: int
 
 
 # ----------------------------------------------------------------- service
@@ -319,6 +381,32 @@ class QueryService:
                     "ORDER BY started_at, task_id"
                 )
             )
+        finally:
+            conn.close()
+        return [
+            TaskBrief(
+                task_id=row["task_id"],
+                title=row["title"],
+                status=row["status"],
+                started_at=_dt(row["started_at"]),
+                finished_at=_dt(row["finished_at"]) if row["finished_at"] else None,
+            )
+            for row in rows
+        ]
+
+    def list_tasks(self, *, status: str | None = None) -> list[TaskBrief]:
+        """全部 Task 概要（可按状态过滤），按启动时间升序。"""
+        conn = self._connect()
+        try:
+            if status is None:
+                rows = list(conn.execute("SELECT * FROM tasks ORDER BY started_at, task_id"))
+            else:
+                rows = list(
+                    conn.execute(
+                        "SELECT * FROM tasks WHERE status = ? ORDER BY started_at, task_id",
+                        (status,),
+                    )
+                )
         finally:
             conn.close()
         return [
@@ -680,6 +768,198 @@ class QueryService:
                     component.add(neighbor)
                     frontier.append(neighbor)
         return sorted(component)
+
+    # -------------------------------------------------------------- timeline
+
+    def get_timeline(
+        self,
+        kinds: list[str] | tuple[str, ...] | set[str] | None = None,
+        *,
+        limit: int | None = None,
+    ) -> list[TimelineItem]:
+        """统一 Timeline（10 §4）：按时间正序混合各 kind 条目。
+
+        - ``kinds=None`` 返回全部 kind；元素短名（``task``）或事件类型名
+          （``feature_change``）均可，未知 kind 报 ``ValueError``；
+        - ``version`` 在 V0.1 无 Version 事件，恒为空（与 get_history 一致）；
+        - ``limit`` 取最新的 N 条（仍按时间正序返回）；
+        - 低层 File Event 永不进入 Timeline（10 §4），只在 Task Detail 展开。
+        """
+        selected = None if kinds is None else {_canonical_timeline_kind(k) for k in kinds}
+
+        def want(kind: str) -> bool:
+            return selected is None or kind in selected
+
+        items: list[TimelineItem] = []
+        conn = self._connect()
+        try:
+            if want("task"):
+                for row in conn.execute(
+                    "SELECT e.event_id, e.timestamp, e.kind, e.task_id, t.title "
+                    "FROM raw_events e JOIN tasks t ON t.task_id = e.task_id "
+                    "WHERE e.kind IN ('task_started', 'task_completed')",
+                ):
+                    started = row["kind"] == "task_started"
+                    items.append(
+                        TimelineItem(
+                            timestamp=_dt(row["timestamp"]),
+                            kind="task",
+                            title=(
+                                f"Task started: {row['title']}"
+                                if started
+                                else f"Task completed: {row['title']}"
+                            ),
+                            summary="",
+                            task_id=row["task_id"],
+                            event_id=row["event_id"],
+                            evidence_count=0,
+                        )
+                    )
+            if want("checkpoint"):
+                for row in conn.execute(
+                    "SELECT e.event_id, e.timestamp, e.task_id, c.checkpoint_index, "
+                    "c.summary, c.reason, c.diff_evidence_id "
+                    "FROM raw_events e JOIN checkpoints c ON c.checkpoint_id = e.checkpoint_id "
+                    "WHERE e.kind = 'checkpoint_created'"
+                ):
+                    summary_text = row["summary"] or row["reason"] or ""
+                    items.append(
+                        TimelineItem(
+                            timestamp=_dt(row["timestamp"]),
+                            kind="checkpoint",
+                            title=f"Checkpoint #{row['checkpoint_index']}",
+                            summary=summary_text,
+                            task_id=row["task_id"],
+                            event_id=row["event_id"],
+                            evidence_count=1 if row["diff_evidence_id"] else 0,
+                        )
+                    )
+            if want("feature") or want("parameter") or want("decision") or want("bug"):
+                wanted_types = tuple(
+                    event_type
+                    for event_type, kind in _TYPE_TO_KIND.items()
+                    if want(kind)
+                )
+                placeholders = ",".join("?" for _ in wanted_types)
+                for row in conn.execute(
+                    f"SELECT * FROM evolution_events WHERE type IN ({placeholders})",
+                    wanted_types,
+                ):
+                    evidence_ids = _loads(row["evidence_ids"], [])
+                    items.append(
+                        TimelineItem(
+                            timestamp=_dt(row["timestamp"]),
+                            kind=_TYPE_TO_KIND[row["type"]],
+                            title=row["title"],
+                            summary=row["description"],
+                            task_id=row["task_id"],
+                            event_id=row["event_id"],
+                            evidence_count=len(evidence_ids),
+                        )
+                    )
+        finally:
+            conn.close()
+        items.sort(key=lambda item: (item.timestamp, item.event_id))
+        if limit is not None:
+            if limit < 1:
+                raise ValueError("limit must be >= 1")
+            items = items[-limit:]
+        return items
+
+    # ------------------------------------------------------------- summaries
+
+    def list_changed_files(self, *, limit: int | None = None) -> list[FileSummary]:
+        """按变更次数倒序的文件汇总（Evolution Report §8 关键 Changed Files）。"""
+        conn = self._connect()
+        try:
+            rows = list(
+                conn.execute(
+                    "SELECT path, COUNT(*) AS n, MIN(timestamp) AS first_at, "
+                    "MAX(timestamp) AS last_at FROM file_changes "
+                    "GROUP BY path ORDER BY n DESC, path"
+                )
+            )
+        finally:
+            conn.close()
+        files = [
+            FileSummary(
+                path=row["path"],
+                change_count=row["n"],
+                first_at=_dt(row["first_at"]),
+                last_at=_dt(row["last_at"]),
+            )
+            for row in rows
+        ]
+        return files if limit is None else files[:limit]
+
+    def list_parameter_histories(self, *, scope: str | None = None) -> list[ParameterHistory]:
+        """全部参数的完整历史（Evolution Report §5 Parameter Evolution）。"""
+        conn = self._connect()
+        try:
+            names = [
+                str(row["name_display"])
+                for row in conn.execute(
+                    "SELECT name_display FROM parameter_changes "
+                    "GROUP BY name_norm ORDER BY MIN(seq)"
+                )
+            ]
+        finally:
+            conn.close()
+        return [self.get_parameter_history(name, scope=scope) for name in names]
+
+    def list_feature_histories(self) -> list[FeatureHistory]:
+        """全部 Feature 的完整历史（Evolution Report §4 Feature Evolution）。"""
+        conn = self._connect()
+        try:
+            names = [
+                str(row["feature_display"])
+                for row in conn.execute(
+                    "SELECT feature_display FROM feature_changes "
+                    "GROUP BY feature_name_norm ORDER BY MIN(seq)"
+                )
+            ]
+        finally:
+            conn.close()
+        return [self.get_feature_history(name) for name in names]
+
+    def list_decision_histories(self) -> list[DecisionHistory]:
+        """全部 Decision subject 的历史（Evolution Report §6 Decision History）。"""
+        conn = self._connect()
+        try:
+            subjects = [
+                str(row["subject_display"])
+                for row in conn.execute(
+                    "SELECT subject_display FROM decisions "
+                    "GROUP BY subject_norm ORDER BY MIN(seq)"
+                )
+            ]
+        finally:
+            conn.close()
+        return [self.get_decision_history(subject) for subject in subjects]
+
+    # --------------------------------------------------------------- evidence
+
+    def get_evidence_record(self, evidence_id: str) -> EvidenceRecord | None:
+        """Evidence 投影行；不存在返回 None（内容文件不进 SQLite，07 §6）。"""
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                "SELECT * FROM evidence WHERE evidence_id = ?", (evidence_id,)
+            ).fetchone()
+        finally:
+            conn.close()
+        if row is None:
+            return None
+        return EvidenceRecord(
+            evidence_id=row["evidence_id"],
+            type=row["type"],
+            ref=row["ref"],
+            path=row["path"],
+            created_at=_dt(row["created_at"]),
+            task_id=row["task_id"],
+            checkpoint_id=row["checkpoint_id"],
+            metadata=_loads(row["metadata"], {}),
+        )
 
     # ---------------------------------------------------------- current state
 

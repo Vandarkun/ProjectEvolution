@@ -16,17 +16,21 @@ from project_evolution.index.projection import (
     update_projection,
 )
 from project_evolution.index.query import (
+    TIMELINE_KINDS,
     BugItem,
     DecisionHistory,
     DecisionItem,
+    EvidenceRecord,
     EvolutionItem,
     FeatureHistory,
     FileHistory,
+    FileSummary,
     ParameterHistory,
     ParameterItem,
     ProjectionStatus,
     QueryService,
     TaskHistory,
+    TimelineItem,
 )
 from project_evolution.index.store import ProjectionNotBuiltError, ProjectionStore
 
@@ -34,9 +38,11 @@ __all__ = [
     "BugItem",
     "DecisionHistory",
     "DecisionItem",
+    "EvidenceRecord",
     "EvolutionItem",
     "FeatureHistory",
     "FileHistory",
+    "FileSummary",
     "ParameterHistory",
     "ParameterItem",
     "ProjectionError",
@@ -46,7 +52,9 @@ __all__ = [
     "ProjectionStore",
     "QueryService",
     "RebuildReport",
+    "TIMELINE_KINDS",
     "TaskHistory",
+    "TimelineItem",
     "UpdateReport",
     "normalize_name",
     "rebuild_projection",
