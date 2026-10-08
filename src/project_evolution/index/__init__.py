@@ -15,14 +15,38 @@ from project_evolution.index.projection import (
     rebuild_projection,
     update_projection,
 )
+from project_evolution.index.query import (
+    BugItem,
+    DecisionHistory,
+    DecisionItem,
+    EvolutionItem,
+    FeatureHistory,
+    FileHistory,
+    ParameterHistory,
+    ParameterItem,
+    ProjectionStatus,
+    QueryService,
+    TaskHistory,
+)
 from project_evolution.index.store import ProjectionNotBuiltError, ProjectionStore
 
 __all__ = [
+    "BugItem",
+    "DecisionHistory",
+    "DecisionItem",
+    "EvolutionItem",
+    "FeatureHistory",
+    "FileHistory",
+    "ParameterHistory",
+    "ParameterItem",
     "ProjectionError",
     "ProjectionNotBuiltError",
     "ProjectionResult",
+    "ProjectionStatus",
     "ProjectionStore",
+    "QueryService",
     "RebuildReport",
+    "TaskHistory",
     "UpdateReport",
     "normalize_name",
     "rebuild_projection",

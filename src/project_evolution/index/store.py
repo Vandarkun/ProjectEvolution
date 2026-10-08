@@ -175,6 +175,9 @@ class ProjectionStore:
     def connection(self) -> sqlite3.Connection:
         """取当前版本的连接（按版本缓存；指针变化后重建并释放旧句柄）。
 
+        缓存连接若已被外部关闭，自动重开——调用方可以按需 close 取得的
+        连接而不破坏池。
+
         :raises ProjectionNotBuiltError: 指针不存在，或指针指向的文件缺失。
         """
         version = self.current_version()
@@ -185,7 +188,12 @@ class ProjectionStore:
             )
         with self._lock:
             if self._cached_version == version and self._cached_conn is not None:
-                return self._cached_conn
+                try:
+                    self._cached_conn.execute("SELECT 1")  # 存活检查
+                    return self._cached_conn
+                except sqlite3.Error:
+                    _close_quietly(self._cached_conn)
+                    self._cached_conn = None
             conn = self.connect(self.db_path(version))  # 文件缺失 -> 明确报错
             old = self._cached_conn
             self._cached_version = version
