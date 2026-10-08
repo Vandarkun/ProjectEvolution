@@ -123,11 +123,12 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="COMMAND=STATUS",
         help="test hint, e.g. 'pytest -q=passed' (repeatable)",
     )
+    _add_provider_args(task_checkpoint, with_project=False)
     task_checkpoint.add_argument(
         "--no-wait",
         dest="no_wait",
         action="store_true",
-        help="skip draining background analysis before exit",
+        help="skip waiting for background analysis before exit",
     )
     task_complete = task_sub.add_parser(
         "complete", help="final checkpoint + close the task"
@@ -143,11 +144,12 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="COMMAND=STATUS",
         help="test hint, e.g. 'pytest -q=passed' (repeatable)",
     )
+    _add_provider_args(task_complete, with_project=False)
     task_complete.add_argument(
         "--no-wait",
         dest="no_wait",
         action="store_true",
-        help="skip draining background analysis before exit",
+        help="skip waiting for background analysis before exit",
     )
     return parser
 
@@ -489,19 +491,40 @@ def _parse_test_hints(raw_tests: list[str]) -> list[dict[str, str]]:
 
 
 def _task_command(args: argparse.Namespace, tool: str) -> int:
-    """``pel task start/checkpoint/complete``：同一 Tool Service 层的 CLI 兼容入口。"""
-    from project_evolution.mcp import PelToolService, ProjectRegistry
+    """``pel task start/checkpoint/complete``：同一 Tool Service 层的 CLI 兼容入口。
+
+    checkpoint/complete 与 MCP 相同默认异步提交语义分析；CLI 的一次性进程
+    在退出前默认 drain（08 §5：同步等待仅作为 CLI / 测试选项），并把
+    ``analysis_status`` 刷新为最终结果（committed/noop/pending）。
+    """
+    from project_evolution.mcp import (
+        PelToolService,
+        ProjectRegistry,
+        ProviderSpec,
+        build_provider,
+    )
     from project_evolution.mcp.errors import ToolError
 
     root: Path = args.project
     if not root.is_dir():
         print(f"error: project root not found: {root}", file=sys.stderr)
         return 2
+    if tool == "start_task":
+        spec = None  # start 不产生 checkpoint，无需 Provider
+    else:
+        spec = ProviderSpec(
+            provider=args.provider,
+            model=args.model,
+            base_url=args.base_url,
+            api_key_env=args.api_key_env,
+        )
     service = PelToolService(
-        ProjectRegistry.single(root), provider_factory=None, source="cli"
+        ProjectRegistry.single(root),
+        provider_factory=(
+            (lambda config: build_provider(spec, config)) if spec is not None else None
+        ),
+        source="cli",
     )
-    # provider_factory=None -> 不组装语义分析 worker（analysis_status=disabled）；
-    # CLI 的同步分析入口是 `pel analyze`（phase-05），这里只保证事实落盘。
     try:
         if tool == "start_task":
             result = service.start_task(
@@ -524,6 +547,14 @@ def _task_command(args: argparse.Namespace, tool: str) -> int:
                     "tests": _parse_test_hints(args.tests),
                 }
             )
+        checkpoint_id = result.get("checkpoint_id")
+        if (
+            checkpoint_id
+            and not args.no_wait
+            and result.get("analysis_status") == "pending"
+        ):
+            service.drain_analysis()
+            result["analysis_status"] = service.resolve_analysis_status(checkpoint_id)
     except ToolError as exc:
         print(
             json.dumps(exc.to_payload(), ensure_ascii=False, indent=2), file=sys.stderr

@@ -3,7 +3,7 @@
 面向 Coding Agent 的项目工程演进记录系统。回答一个核心问题：
 **这个项目是怎样一步一步变成现在这样的？**
 
-当前实现（Phase 01 ~ Phase 06）：
+当前实现（Phase 01 ~ Phase 07）：
 
 - **领域模型库**（`project_evolution.models`）：Project / Session / Task /
   TaskSessionLink / Checkpoint / RawEvent / Evidence / EvolutionEvent /
@@ -70,6 +70,26 @@
     全部由事件归约（Parameter 取最新有效 after、Decision 应用 supersede、
     Feature 按 added/modified/removed），查询只读 SQLite 不调用任何模型；
   - 性能：17k raw + 3k 语义事件 rebuild 约 4s，常规查询 < 120ms。
+- **MCP 集成**（Phase 07，`project_evolution.mcp`）：
+  - stdio MCP Server（`pel mcp serve` / `python -m project_evolution.mcp`）：
+    initialize 版本协商（2024-11-05 / 2025-03-26 / 2025-06-18）、tools/list、
+    tools/call、ping；stdout 只写协议消息（handler 执行期间第三方 print 一律
+    改道 stderr），logging 全部 stderr，连续 100+ 次调用不破坏协议（测试保证）；
+  - 五个核心工具 + 可选下钻：`start_task` / `checkpoint_task` / `complete_task` /
+    `get_project_state` / `get_history`（task|parameter|feature|decision|bug|file|
+    version）/ `get_evidence`（EVD- patch 与 RAW- 事件，内容裁剪到 20k 字符）；
+  - 语义分析默认异步：checkpoint 事实与 Evidence 落盘即返回
+    （`checkpoint_saved=true, analysis_status=pending`），Evolution Model 失败
+    绝不把工具调用整体判为 failed（partial success 语义）；
+  - Project Resolution：显式 `project`（name/id/root 精确匹配）→ 当前绑定 →
+    单项目 pinned（`--project`）；多项目走 `--registry` JSON 文件；
+    无法唯一解析时报 `PROJECT_AMBIGUOUS` / `PROJECT_NOT_FOUND`，绝不猜测；
+  - 稳定错误码（code/message/recoverable 三字段）：`PROJECT_NOT_FOUND` /
+    `PROJECT_AMBIGUOUS` / `TASK_NOT_FOUND` / `INVALID_TASK_STATE` /
+    `GIT_UNAVAILABLE` / `LEDGER_WRITE_FAILED` / `ANALYSIS_PENDING` /
+    `INVALID_ARGUMENT` / `EVIDENCE_NOT_FOUND` / `INTERNAL_ERROR`；
+    内部异常细节只写 server 日志，永不把 traceback 返回给 Agent；
+  - 查询工具先做增量投影追平，响应携带 `projection.stale / in_sync` 元数据。
 
 ## 安装与开发
 
@@ -94,6 +114,15 @@ pel retry-pending --project PATH [--provider ...] [--json]
 
 # SQLite 投影：按 seq 全量重放重建（删除 DB 后可完整恢复）
 pel index rebuild --project PATH [--json]
+
+# MCP stdio Server（Phase 07）
+pel mcp serve --project PATH [--provider mock|openai|ollama] [--model ...] [--registry FILE]
+pel mcp agent-instructions [--project NAME]   # 输出最短 AGENTS.md 规则样例
+
+# Task 兼容入口（只支持 Shell 的 Agent；输出 JSON）
+pel task start "TITLE" --project PATH [--agent codex] [--session-id SES-...]
+pel task checkpoint TASK-... --project PATH --summary "..." [--test "cmd=passed"] [--provider ...]
+pel task complete TASK-... --project PATH --summary "..." [--provider ...] [--no-wait]
 ```
 
 `pel doctor` 检查 raw ledger 完整性（JSON 可解析、ID 重复、seq 单调、尾部损坏）；
@@ -144,3 +173,49 @@ print(state.current_parameters, history.current)
 ```
 
 设计文档见 `project-evolution-ledger-docs/docs/`。
+
+## MCP Server 接入 Coding Agent
+
+单项目 pinned（Codex / Claude Code / 任意 MCP 客户端的 stdio 配置）：
+
+```json
+{
+  "mcpServers": {
+    "pel": {
+      "command": "pel",
+      "args": ["mcp", "serve", "--project", "D:/code/MyProject"]
+    }
+  }
+}
+```
+
+多项目 registry（`registry.json`，`name` 唯一；工具调用必须显式传 `project`）：
+
+```json
+{"projects": [{"name": "MyProject", "root": "D:/code/MyProject"}]}
+```
+
+```json
+{"args": ["mcp", "serve", "--registry", "D:/code/registry.json"]}
+```
+
+真实语义分析（默认 mock，不联网）：`--provider openai --model ... --api-key-env NAME`
+或 `--provider ollama --model ...`。
+
+Agent 侧最短规则（`pel mcp agent-instructions` 输出，可直接粘贴进 AGENTS.md）：
+
+```text
+This project uses the Project Evolution Ledger (PEL) MCP tools.
+
+- Call `start_task` when you begin a well-defined development task
+  (feature, bugfix, refactor).
+- Call `checkpoint_task` when a significant subgoal is done, an important
+  design choice was made, key tests first pass, or you are about to
+  compact/switch context.
+- Call `complete_task` when the task is finished.
+- Call `get_history` / `get_project_state` when you need past designs,
+  parameters, decisions, or bug fixes.
+- Never edit files under `.project-evolution/events` by hand.
+
+Do not call these tools every turn — only at the moments above.
+```

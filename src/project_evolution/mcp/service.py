@@ -174,6 +174,17 @@ class ProjectRuntime:
     def analysis_status(self) -> AnalysisStatus:
         return "pending" if self.worker is not None else "disabled"
 
+    def final_analysis_status(self, checkpoint_id: str) -> AnalysisStatus:
+        """drain 之后该 checkpoint 的最终分析状态（CLI 同步模式输出用）。"""
+        worker = self.worker
+        if worker is None:
+            return "disabled"
+        for _task_id, cp_id, status in worker.completed:
+            if cp_id == checkpoint_id:
+                return status  # committed / noop
+        # 未完成：要么失败转 pending（worker.failures），要么仍在队列
+        return "pending"
+
     def stop(self, *, timeout: float) -> None:
         worker = self.worker
         if worker is not None:
@@ -203,6 +214,21 @@ class PelToolService:
         for runtime in self._runtimes.values():
             runtime.stop(timeout=timeout)
         self._runtimes.clear()
+
+    def drain_analysis(self, *, timeout: float = 300.0) -> bool:
+        """等待全部后台分析完成（CLI 同步模式）；超时返回 False。"""
+        drained = True
+        for runtime in self._runtimes.values():
+            worker = runtime.worker
+            if worker is not None and not worker.wait_idle(timeout=timeout):
+                drained = False
+        return drained
+
+    def resolve_analysis_status(self, checkpoint_id: str) -> AnalysisStatus:
+        """查某个 checkpoint 的最终分析状态（需先 drain_analysis）。"""
+        for runtime in self._runtimes.values():
+            return runtime.final_analysis_status(checkpoint_id)
+        return "none"
 
     def _resolve(self, project: Any) -> ProjectRuntime:
         if project is not None and not isinstance(project, str):

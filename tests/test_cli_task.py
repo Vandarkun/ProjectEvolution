@@ -52,7 +52,7 @@ def test_task_start_checkpoint_complete_roundtrip(tmp_path: Path, capsys) -> Non
     assert code == 0
     checkpoint = json.loads(capsys.readouterr().out)
     assert checkpoint["checkpoint_saved"] is True
-    assert checkpoint["analysis_status"] == "disabled"  # CLI 入口不组装 worker
+    assert checkpoint["analysis_status"] == "noop"  # mock provider + 退出前 drain
     assert checkpoint["evidence"]["changed_files"] == ["app.py"]
 
     code = main(
@@ -71,6 +71,23 @@ def test_task_start_checkpoint_complete_roundtrip(tmp_path: Path, capsys) -> Non
     assert kinds.count("test_passed") == 1
     assert kinds.count("test_failed") == 1
     assert "task_completed" in kinds
+
+
+def test_task_checkpoint_no_wait_reports_pending(tmp_path: Path, capsys) -> None:
+    """--no-wait：事实落盘即返回，analysis_status=pending（与 MCP 默认语义一致）。"""
+    repo = init_repo(tmp_path)
+    (repo / "app.py").write_text("x = 1\n")
+    commit_all(repo, "init")
+    main(["task", "start", "t", "--project", str(repo)])
+    task_id = json.loads(capsys.readouterr().out)["task_id"]
+    (repo / "app.py").write_text("x = 2\n")
+    code = main(
+        ["task", "checkpoint", task_id, "--project", str(repo), "--no-wait"]
+    )
+    assert code == 0
+    checkpoint = json.loads(capsys.readouterr().out)
+    assert checkpoint["checkpoint_saved"] is True
+    assert checkpoint["analysis_status"] == "pending"
 
 
 def test_task_checkpoint_unknown_task_errors_stably(tmp_path: Path, capsys) -> None:
