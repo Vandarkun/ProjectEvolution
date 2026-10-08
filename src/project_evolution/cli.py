@@ -413,10 +413,6 @@ def _retry_pending(args: argparse.Namespace) -> int:
     return 0 if all(r.succeeded for r in results) else 1
 
 
-if __name__ == "__main__":  # pragma: no cover
-    sys.exit(main())
-
-
 # --------------------------------------------------------------- phase-07
 
 
@@ -564,3 +560,6 @@ def _task_command(args: argparse.Namespace, tool: str) -> int:
         service.shutdown(timeout=5.0)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
+
+if __name__ == "__main__":  # pragma: no cover
+    sys.exit(main())
