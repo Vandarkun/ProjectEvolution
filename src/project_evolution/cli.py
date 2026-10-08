@@ -10,6 +10,9 @@ Phase 07：增加 ``pel mcp serve``（stdio MCP Server）、``pel mcp
 agent-instructions``（最短 Agent 规则样例）与 ``pel task start/checkpoint/
 complete``（Shell-only Agent 的兼容入口，输出 JSON；语义分析与 MCP 相同
 默认异步，命令结束前 drain 后台 worker）。
+Phase 08：增加 ``pel export``（Markdown/HTML Evolution Report，可独立
+生成）与 ``pel dashboard``（本地只读 FastAPI Dashboard，默认仅监听
+loopback；需要 ``[dashboard]`` extra）。
 """
 
 from __future__ import annotations
@@ -151,6 +154,35 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="skip waiting for background analysis before exit",
     )
+
+    export = sub.add_parser(
+        "export", help="export the evolution report as markdown or html"
+    )
+    export.add_argument("--project", type=Path, default=Path.cwd(), help="project root")
+    export.add_argument(
+        "--format",
+        dest="export_format",
+        choices=["markdown", "html"],
+        default="markdown",
+        help="report format (default markdown)",
+    )
+    export.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="write to a file instead of stdout",
+    )
+
+    dashboard = sub.add_parser(
+        "dashboard", help="run the local read-only dashboard (needs [dashboard] extra)"
+    )
+    dashboard.add_argument("--project", type=Path, default=Path.cwd(), help="project root")
+    dashboard.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="bind address (default 127.0.0.1, loopback only)",
+    )
+    dashboard.add_argument("--port", type=int, default=8642)
     return parser
 
 
@@ -202,6 +234,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.task_command == "complete":
             return _task_command(args, "complete_task")
         parser.error("task requires a subcommand (start | checkpoint | complete)")
+    if args.command == "export":
+        return _export(args)
+    if args.command == "dashboard":
+        return _dashboard(args)
     return 2  # argparse 只会产生已注册子命令，此处不可达
 
 
@@ -559,6 +595,61 @@ def _task_command(args: argparse.Namespace, tool: str) -> int:
     finally:
         service.shutdown(timeout=5.0)
     print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+# --------------------------------------------------------------- phase-08
+
+
+def _export(args: argparse.Namespace) -> int:
+    """pel export：Markdown / HTML Evolution Report（可独立生成，无需 Dashboard）。"""
+    import contextlib
+
+    from project_evolution.dashboard import build_report, render_html, render_markdown
+    from project_evolution.errors import ConfigError, PelError, ProjectNotFoundError
+    from project_evolution.index import ProjectionNotBuiltError, QueryService, update_projection
+
+    try:
+        if not args.project.is_dir():
+            raise ProjectNotFoundError(f"project root not found: {args.project}")
+        # 导出前增量追平投影；失败不阻塞（沿用 Dashboard/MCP 查询路径）
+        with contextlib.suppress(PelError):
+            update_projection(args.project)
+        report = build_report(QueryService(args.project))
+    except (ConfigError, ProjectNotFoundError, PelError, ProjectionNotBuiltError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    content = (
+        render_markdown(report) if args.export_format == "markdown" else render_html(report)
+    )
+    if args.output is not None:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(content, encoding="utf-8", newline="\n")
+        print(f"report written: {args.output}")
+    else:
+        sys.stdout.write(content)
+        if not content.endswith("\n"):
+            sys.stdout.write("\n")
+    return 0
+
+
+def _dashboard(args: argparse.Namespace) -> int:
+    """pel dashboard：本地只读 Dashboard（默认仅监听 loopback，11 §9）。"""
+    from project_evolution.dashboard import run_dashboard
+    from project_evolution.errors import ConfigError, ProjectNotFoundError
+
+    try:
+        if not args.project.is_dir():
+            raise ProjectNotFoundError(f"project root not found: {args.project}")
+    except (ConfigError, ProjectNotFoundError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    try:
+        run_dashboard(args.project, host=args.host, port=args.port)
+    except RuntimeError as exc:  # 缺 [dashboard] extra
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     return 0
 
 if __name__ == "__main__":  # pragma: no cover

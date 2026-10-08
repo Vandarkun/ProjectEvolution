@@ -3,7 +3,7 @@
 面向 Coding Agent 的项目工程演进记录系统。回答一个核心问题：
 **这个项目是怎样一步一步变成现在这样的？**
 
-当前实现（Phase 01 ~ Phase 07）：
+当前实现（Phase 01 ~ Phase 08）：
 
 - **领域模型库**（`project_evolution.models`）：Project / Session / Task /
   TaskSessionLink / Checkpoint / RawEvent / Evidence / EvolutionEvent /
@@ -90,6 +90,32 @@
     `INVALID_ARGUMENT` / `EVIDENCE_NOT_FOUND` / `INTERNAL_ERROR`；
     内部异常细节只写 server 日志，永不把 traceback 返回给 Agent；
   - 查询工具先做增量投影追平，响应携带 `projection.stale / in_sync` 元数据。
+- **Dashboard 与导出**（Phase 08，`project_evolution.dashboard`）：
+  - FastAPI read-only API（全 GET）：`/api/overview` / `/api/timeline` /
+    `/api/tasks/{id}` / `/api/parameters/{name}` / `/api/features/{name}` /
+    `/api/decisions/{subject}` / `/api/bugs` / `/api/evidence/{id}`，
+    数据全部来自 Query Service（先增量追平投影，与 MCP 查询路径一致）；
+  - 四个必做页面（无 JS / 无前端构建的服务端渲染）：Project Overview、
+    Timeline（Task/Feature/Parameter/Decision/Bug/Version kind 筛选，
+    Checkpoint 可折叠，File Event 不进入 Timeline）、Task Detail
+    （Checkpoint / Changed Files / Tests / Evolution Events / Evidence 入口
+    均可展开）、Parameter History（Before → After → Current，含按 scope
+    拆分）；
+  - Evidence 下钻：`/evidence/{EVD-id}` 以纯文本 `<pre>` 展示 Patch
+    （裁剪到 20k 字符），元数据来自投影 evidence 表；
+  - `pel export --format markdown|html [--output FILE]`：10 节结构的
+    Evolution Report（总览 / 时间范围 / Tasks / Feature / Parameter /
+    Decision / Bug-Fix / 关键 Changed Files / 当前状态 / Provenance 摘要），
+    关键结论携带 `[EVO-*]` / `[RAW-*]` Event ID，可独立生成；
+  - 安全（11 §9）：所有动态文本经统一 `html.escape` 管线（表格 / 列表 /
+    details 构建函数自动转义，无 raw HTML 出口）；恶意 commit message /
+    title / patch 只显示为文本（XSS 测试保证）；本地服务默认仅监听
+    loopback（`pel dashboard`，默认 `127.0.0.1:8642`）；Dashboard 只读且
+    与 Core / MCP 完全解耦 —— 关闭/删除 Dashboard 不影响采集与 Ledger
+    （测试保证：运行期间账本字节不变，停止后 Ledger 追加 / MCP 查询 /
+    投影重建照常）；
+  - Web 栈为可选 extra：`pip install 'project-evolution[dashboard]'`
+    （fastapi + uvicorn）；不装时 `pel export` 与其余命令不受影响。
 
 ## 安装与开发
 
@@ -123,6 +149,12 @@ pel mcp agent-instructions [--project NAME]   # 输出最短 AGENTS.md 规则样
 pel task start "TITLE" --project PATH [--agent codex] [--session-id SES-...]
 pel task checkpoint TASK-... --project PATH --summary "..." [--test "cmd=passed"] [--provider ...]
 pel task complete TASK-... --project PATH --summary "..." [--provider ...] [--no-wait]
+
+# Evolution Report 导出（Phase 08；可独立生成，无需 Dashboard 运行）
+pel export --project PATH --format markdown|html [--output FILE]
+
+# 本地只读 Dashboard（Phase 08；默认仅监听 127.0.0.1，需 [dashboard] extra）
+pel dashboard --project PATH [--host 127.0.0.1] [--port 8642]
 ```
 
 `pel doctor` 检查 raw ledger 完整性（JSON 可解析、ID 重复、seq 单调、尾部损坏）；
@@ -170,6 +202,14 @@ query = QueryService("./my-project")
 state = query.get_project_state()           # 当前参数 / 活跃决策 / Feature
 history = query.get_parameter_history("OpacityMin")
 print(state.current_parameters, history.current)
+
+# Timeline 与 Dashboard（Phase 08）
+timeline = query.get_timeline(["parameter", "decision"], limit=50)
+for item in timeline:
+    print(item.timestamp, item.kind, item.title, f"[{item.event_id}]")
+
+# pel dashboard → http://127.0.0.1:8642（Overview / Timeline / Task Detail /
+# Parameter History / Evidence 下钻；全部只读）
 ```
 
 设计文档见 `project-evolution-ledger-docs/docs/`。
