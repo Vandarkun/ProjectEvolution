@@ -10,12 +10,15 @@
 Registry 文件格式（UTF-8 JSON）::
 
     {"projects": [{"name": "screepin", "id": "PRJ-0001", "root": "D:/code/ScreenPin"}]}
+
+``root`` 允许相对路径，一律在加载期解析为**相对 registry 文件所在目录**的
+绝对路径（registry 文件可随项目移动；绝不按服务器运行时 cwd 解析，
+避免 cwd 漂移后静默指向另一个项目）。
 """
 
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Any
 
@@ -45,9 +48,16 @@ class ProjectEntry(BaseModel):
 
 
 def _same_path(left: str, right: str) -> bool:
-    return Path(os.path.normcase(os.path.abspath(left))) == Path(
-        os.path.normcase(os.path.abspath(right))
-    )
+    """路径等价比较：双侧 resolve 后比较。
+
+    覆盖大小写（Windows 不敏感）、分隔符、相对路径、8.3 短名与符号链接
+    （如 ``C:\\Users\\ADMINI~1`` vs ``C:\\Users\\Administrator``）。
+    PureWindowsPath 的 ``==`` 本身大小写不敏感，无需 normcase。
+    """
+    try:
+        return Path(left).resolve() == Path(right).resolve()
+    except (OSError, ValueError):  # 非法路径字符串按不等处理
+        return False
 
 
 class ProjectRegistry:
@@ -78,6 +88,9 @@ class ProjectRegistry:
     @classmethod
     def load(cls, registry_file: str | Path) -> ProjectRegistry:
         """从 JSON registry 文件加载（多项目）。
+
+        条目 ``root`` 为相对路径时，按 registry 文件所在目录解析为绝对路径
+        （见模块 docstring；不受服务器运行时 cwd 影响）。
 
         :raises ToolError: 文件不存在 / 不是合法 JSON / 结构或条目非法 /
             name 重复（重复 name 会让显式解析产生歧义，加载期即拒绝）。
@@ -120,7 +133,12 @@ class ProjectRegistry:
                 raise ToolError(
                     INVALID_REGISTRY, f"registry entry #{index} 'id' must be a string"
                 )
-            entries.append(ProjectEntry(name=name, root=root, id=project_id))
+            root_path = Path(root)
+            if not root_path.is_absolute():
+                root_path = path.parent / root_path
+            entries.append(
+                ProjectEntry(name=name, root=str(root_path.resolve()), id=project_id)
+            )
         names = [entry.name for entry in entries]
         duplicates = sorted({name for name in names if names.count(name) > 1})
         if duplicates:

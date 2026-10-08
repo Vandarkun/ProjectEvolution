@@ -36,6 +36,59 @@ def test_single_pinned_resolves_without_project_param(tmp_path: Path) -> None:
     assert entry.root == str(repo)
 
 
+def test_single_registry_resolves_relative_root(tmp_path: Path, monkeypatch) -> None:
+    """冒烟回归：``--project .`` 这类相对路径不得产生空项目名或相对 root。"""
+    monkeypatch.chdir(tmp_path)
+    registry = ProjectRegistry.single(".")
+    entry = registry.entries[0]
+    assert entry.name == tmp_path.name  # 非空、来自解析后的目录名
+    assert Path(entry.root).is_absolute()
+    assert Path(entry.root) == tmp_path.resolve()
+
+
+def test_load_registry_resolves_relative_roots_against_file_location(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """registry 文件里的相对 root 按 registry 文件所在目录解析，与 cwd 无关。"""
+    (tmp_path / "projA").mkdir()
+    path = write_registry(tmp_path, {"projects": [{"name": "a", "root": "projA"}]})
+    monkeypatch.chdir(tmp_path)  # 从任意 cwd 加载
+    registry = ProjectRegistry.load(path)
+    entry = registry.entries[0]
+    assert Path(entry.root).is_absolute()
+    assert Path(entry.root) == (tmp_path / "projA").resolve()
+
+    # cwd 漂移后：validate / matches 仍指向 registry 旁边的 projA，不跟 cwd 走
+    monkeypatch.chdir(tmp_path.parent)
+    registry.validate_roots()
+    assert registry.resolve("a").root == str((tmp_path / "projA").resolve())
+    assert registry.resolve(str(tmp_path / "projA")).name == "a"
+
+
+def test_root_matching_tolerates_short_path_and_case(tmp_path: Path) -> None:
+    """路径等价：8.3 短名 / 大小写 / 正反斜杠拼法不同仍命中同一项目。"""
+    import sys
+
+    repo = init_repo(tmp_path)
+    registry = ProjectRegistry.single(repo)
+    lowered = str(repo).lower()
+    backslashed = lowered.replace("/", "\\") if "/" in lowered else lowered
+    assert registry.resolve(backslashed).root == str(Path(repo).resolve())
+    if sys.platform == "win32":
+        short = _to_short_path(str(repo))
+        if short != str(repo):  # 系统禁用 8.3 时跳过该断言
+            assert registry.resolve(short).root == str(Path(repo).resolve())
+
+
+def _to_short_path(path: str) -> str:
+    """尽量把路径转成 8.3 短名形式（不可用时原样返回；仅 Windows 可调用）。"""
+    import ctypes
+
+    buffer = ctypes.create_unicode_buffer(260)
+    length = ctypes.windll.kernel32.GetShortPathNameW(path, buffer, 260)  # type: ignore[attr-defined]
+    return buffer.value if length else path
+
+
 def test_explicit_match_by_name_id_and_root(tmp_path: Path) -> None:
     repo = init_repo(tmp_path)
     (repo / "a.txt").write_text("a")
