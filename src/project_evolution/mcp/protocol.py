@@ -61,7 +61,7 @@ def decode_line(line: bytes | str) -> Any:
     return json.loads(line)
 
 
-def encode_message(message: dict[str, Any]) -> bytes:
+def encode_message(message: dict[str, Any] | list[Any]) -> bytes:
     """编码为单行协议消息（紧凑、无内嵌换行，末尾 ``\\n`` 由写入方补）。"""
     return json.dumps(message, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
