@@ -65,11 +65,11 @@ class ProjectRegistry:
     @classmethod
     def single(cls, root: str | Path, *, name: str | None = None) -> ProjectRegistry:
         """单项目 pinned server（phase-07 §4）。"""
-        root_path = Path(root)
+        root_path = Path(root).resolve()
         return cls(
             [
                 ProjectEntry(
-                    name=name or root_path.name,
+                    name=name or root_path.name or "default",
                     root=str(root_path),
                 )
             ]
