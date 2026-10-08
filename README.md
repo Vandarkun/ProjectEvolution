@@ -3,7 +3,7 @@
 面向 Coding Agent 的项目工程演进记录系统。回答一个核心问题：
 **这个项目是怎样一步一步变成现在这样的？**
 
-当前实现（Phase 01 ~ Phase 05）：
+当前实现（Phase 01 ~ Phase 06）：
 
 - **领域模型库**（`project_evolution.models`）：Project / Session / Task /
   TaskSessionLink / Checkpoint / RawEvent / Evidence / EvolutionEvent /
@@ -53,6 +53,23 @@
   （10 feature + 20 parameter + 10 decision + 10 bug_fix + 20 NOOP），
   `OfflineRuleProvider` 确定性提取，Precision 门槛 0.85（当前基线
   Precision 1.0 / Recall 1.0 / NOOP 零违例）。
+- **SQLite 投影与查询层**（Phase 06，`project_evolution.index`）：
+  - `rebuild_projection()`：按 seq 重放 raw.jsonl + evolution.jsonl 构造全部
+    投影表（tasks/sessions/checkpoints/raw_events/evolution_events/evidence/
+    parameter_changes/feature_changes/decisions/bug_fixes/file_changes/
+    projection_meta），integrity check + WAL checkpoint 后切换指针；
+  - Windows 兼容切换协议：`.runtime/evolution-<n>.db` 版本化文件 +
+    `current-db.txt` 指针（tmp + `os.replace` 带重试），重建不替换旧文件，
+    旧连接在切换期间持续可读，旧版本文件延迟清理；
+  - `update_projection()`：水位（raw_seq/evo_seq）增量追平，与 Ledger 写锁
+    同一串行化策略；SQLite 失败只标记 stale，绝不回滚 Canonical Ledger；
+    full rebuild 与 incremental 结果逐表一致（测试保证）；
+  - `QueryService`：`get_task_history` / `get_parameter_history` /
+    `get_feature_history` / `get_decision_history` / `get_bug_history` /
+    `get_file_history`（rename 链追踪）/ `get_project_state`；Current State
+    全部由事件归约（Parameter 取最新有效 after、Decision 应用 supersede、
+    Feature 按 added/modified/removed），查询只读 SQLite 不调用任何模型；
+  - 性能：17k raw + 3k 语义事件 rebuild 约 4s，常规查询 < 120ms。
 
 ## 安装与开发
 
@@ -74,6 +91,9 @@ pel doctor [--project PATH] [--repair] [--json]
 # 同步语义分析（测试/CLI 场景；产品路径默认走后台异步 worker）
 pel analyze TASK-... CHK-... --project PATH [--provider mock|openai|ollama]
 pel retry-pending --project PATH [--provider ...] [--json]
+
+# SQLite 投影：按 seq 全量重放重建（删除 DB 后可完整恢复）
+pel index rebuild --project PATH [--json]
 ```
 
 `pel doctor` 检查 raw ledger 完整性（JSON 可解析、ID 重复、seq 单调、尾部损坏）；
@@ -110,6 +130,17 @@ for event in iter_evolution_events("./my-project"):  # 严格按 seq 顺序
     print(event.type, event.title, event.evidence_ids)
 
 services.tasks.complete_task(task.id, summary="透明度完成")
+
+# SQLite 投影与查询（Phase 06）
+from project_evolution.index import QueryService, rebuild_projection, update_projection
+
+rebuild_projection("./my-project")          # 或：pel index rebuild
+update_projection("./my-project")           # 增量追平（无 DB 时自动 rebuild）
+
+query = QueryService("./my-project")
+state = query.get_project_state()           # 当前参数 / 活跃决策 / Feature
+history = query.get_parameter_history("OpacityMin")
+print(state.current_parameters, history.current)
 ```
 
 设计文档见 `project-evolution-ledger-docs/docs/`。
