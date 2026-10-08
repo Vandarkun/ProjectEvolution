@@ -6,6 +6,10 @@ Phase 05：增加 ``pel analyze``（同步语义分析，测试/CLI 场景）与
 ``pel retry-pending``（重试失败分析）；产品默认路径是后台异步 worker。
 Phase 06：增加 ``pel index rebuild``（SQLite 投影按 seq 全量重建，
 07-storage-and-index.md §4）。
+Phase 07：增加 ``pel mcp serve``（stdio MCP Server）、``pel mcp
+agent-instructions``（最短 Agent 规则样例）与 ``pel task start/checkpoint/
+complete``（Shell-only Agent 的兼容入口，输出 JSON；语义分析与 MCP 相同
+默认异步，命令结束前 drain 后台 worker）。
 """
 
 from __future__ import annotations
@@ -62,11 +66,97 @@ def build_parser() -> argparse.ArgumentParser:
     index_rebuild.add_argument(
         "--json", dest="as_json", action="store_true", help="output machine-readable JSON"
     )
+
+    mcp = sub.add_parser("mcp", help="MCP integration (phase-07)")
+    mcp_sub = mcp.add_subparsers(dest="mcp_command")
+    mcp_serve = mcp_sub.add_parser("serve", help="run the stdio MCP server")
+    mcp_serve.add_argument(
+        "--project",
+        type=Path,
+        default=None,
+        help="pin a single project root (default: cwd if it has .project-evolution/)",
+    )
+    mcp_serve.add_argument(
+        "--registry", type=Path, default=None, help="multi-project registry JSON file"
+    )
+    _add_provider_args(mcp_serve, with_project=False)
+    mcp_serve.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default="WARNING",
+        help="diagnostics go to stderr only (default WARNING)",
+    )
+    mcp_instructions = mcp_sub.add_parser(
+        "agent-instructions", help="print the shortest AGENTS.md rule sample"
+    )
+    mcp_instructions.add_argument(
+        "--project", default=None, help="project name hint for multi-project servers"
+    )
+
+    task = sub.add_parser(
+        "task", help="task lifecycle for shell-only agents (JSON output)"
+    )
+    task_sub = task.add_subparsers(dest="task_command")
+    task_start = task_sub.add_parser("start", help="start a task and capture git baseline")
+    task_start.add_argument("title", help="task title")
+    task_start.add_argument("--project", type=Path, default=Path.cwd(), help="project root")
+    task_start.add_argument("--agent", default=None, help="agent name, e.g. codex")
+    task_start.add_argument("--session-id", dest="session_id", default=None)
+    task_start.add_argument(
+        "--no-wait",
+        dest="no_wait",
+        action="store_true",
+        help="skip draining background analysis before exit",
+    )
+    task_checkpoint = task_sub.add_parser(
+        "checkpoint", help="append a checkpoint with facts and evidence"
+    )
+    task_checkpoint.add_argument("task_id", help="task id (TASK-...)")
+    task_checkpoint.add_argument("--project", type=Path, default=Path.cwd(), help="project root")
+    task_checkpoint.add_argument("--summary", default=None)
+    task_checkpoint.add_argument("--reason", default=None)
+    task_checkpoint.add_argument(
+        "--test",
+        dest="tests",
+        action="append",
+        default=[],
+        metavar="COMMAND=STATUS",
+        help="test hint, e.g. 'pytest -q=passed' (repeatable)",
+    )
+    task_checkpoint.add_argument(
+        "--no-wait",
+        dest="no_wait",
+        action="store_true",
+        help="skip draining background analysis before exit",
+    )
+    task_complete = task_sub.add_parser(
+        "complete", help="final checkpoint + close the task"
+    )
+    task_complete.add_argument("task_id", help="task id (TASK-...)")
+    task_complete.add_argument("--project", type=Path, default=Path.cwd(), help="project root")
+    task_complete.add_argument("--summary", default=None)
+    task_complete.add_argument(
+        "--test",
+        dest="tests",
+        action="append",
+        default=[],
+        metavar="COMMAND=STATUS",
+        help="test hint, e.g. 'pytest -q=passed' (repeatable)",
+    )
+    task_complete.add_argument(
+        "--no-wait",
+        dest="no_wait",
+        action="store_true",
+        help="skip draining background analysis before exit",
+    )
     return parser
 
 
-def _add_provider_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--project", type=Path, default=Path.cwd(), help="project root")
+def _add_provider_args(
+    parser: argparse.ArgumentParser, *, with_project: bool = True
+) -> None:
+    if with_project:
+        parser.add_argument("--project", type=Path, default=Path.cwd(), help="project root")
     parser.add_argument(
         "--provider",
         choices=["mock", "openai", "ollama"],
@@ -96,6 +186,20 @@ def main(argv: list[str] | None = None) -> int:
         if args.index_command == "rebuild":
             return _index_rebuild(args)
         parser.error("index requires a subcommand (rebuild)")
+    if args.command == "mcp":
+        if args.mcp_command == "serve":
+            return _mcp_serve(args)
+        if args.mcp_command == "agent-instructions":
+            return _agent_instructions(args)
+        parser.error("mcp requires a subcommand (serve | agent-instructions)")
+    if args.command == "task":
+        if args.task_command == "start":
+            return _task_command(args, "start_task")
+        if args.task_command == "checkpoint":
+            return _task_command(args, "checkpoint_task")
+        if args.task_command == "complete":
+            return _task_command(args, "complete_task")
+        parser.error("task requires a subcommand (start | checkpoint | complete)")
     return 2  # argparse 只会产生已注册子命令，此处不可达
 
 
@@ -309,3 +413,123 @@ def _retry_pending(args: argparse.Namespace) -> int:
 
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(main())
+
+
+# --------------------------------------------------------------- phase-07
+
+
+def _mcp_serve(args: argparse.Namespace) -> int:
+    """stdio MCP Server：stdout 只写协议，diagnostics 全部走 stderr。"""
+    import logging as logging_module
+
+    from project_evolution.config import PEL_DIR_NAME
+    from project_evolution.mcp import (
+        PelMcpServer,
+        PelToolService,
+        ProjectRegistry,
+        ProviderSpec,
+        build_provider,
+        configure_logging,
+    )
+    from project_evolution.mcp.errors import ToolError
+    from project_evolution.mcp.registry import INVALID_REGISTRY
+
+    configure_logging(getattr(logging_module, args.log_level))
+    try:
+        if args.project is not None:
+            registry = ProjectRegistry.single(args.project)
+        elif args.registry is not None:
+            registry = ProjectRegistry.load(args.registry)
+        elif (Path.cwd() / PEL_DIR_NAME).is_dir():
+            registry = ProjectRegistry.single(Path.cwd())
+        else:
+            print(
+                "error: no project configured; pass --project ROOT or --registry FILE",
+                file=sys.stderr,
+            )
+            return 2
+        registry.validate_roots()
+        spec = ProviderSpec(
+            provider=args.provider,
+            model=args.model,
+            base_url=args.base_url,
+            api_key_env=args.api_key_env,
+        )
+        service = PelToolService(
+            registry,
+            provider_factory=lambda config: build_provider(spec, config),
+            source="mcp",
+        )
+        server = PelMcpServer(service)
+    except ToolError as exc:
+        code = exc.code if exc.code != INVALID_REGISTRY else "INVALID_REGISTRY"
+        print(f"error: {code}: {exc.message}", file=sys.stderr)
+        return 2
+    return server.serve_forever()
+
+
+def _agent_instructions(args: argparse.Namespace) -> int:
+    from project_evolution.mcp.instructions import render_agent_instructions
+
+    print(render_agent_instructions(project=args.project), end="")
+    return 0
+
+
+def _parse_test_hints(raw_tests: list[str]) -> list[dict[str, str]]:
+    """``COMMAND=STATUS`` → ``{"command": ..., "status": ...}``。"""
+    tests = []
+    for raw in raw_tests:
+        command, sep, status = raw.rpartition("=")
+        if not sep or not command.strip() or status not in ("passed", "failed"):
+            raise SystemExit(
+                f"error: --test expects COMMAND=passed|failed, got {raw!r}"
+            )
+        tests.append({"command": command.strip(), "status": status})
+    return tests
+
+
+def _task_command(args: argparse.Namespace, tool: str) -> int:
+    """``pel task start/checkpoint/complete``：同一 Tool Service 层的 CLI 兼容入口。"""
+    from project_evolution.mcp import PelToolService, ProjectRegistry
+    from project_evolution.mcp.errors import ToolError
+
+    root: Path = args.project
+    if not root.is_dir():
+        print(f"error: project root not found: {root}", file=sys.stderr)
+        return 2
+    service = PelToolService(
+        ProjectRegistry.single(root), provider_factory=None, source="cli"
+    )
+    # provider_factory=None -> 不组装语义分析 worker（analysis_status=disabled）；
+    # CLI 的同步分析入口是 `pel analyze`（phase-05），这里只保证事实落盘。
+    try:
+        if tool == "start_task":
+            result = service.start_task(
+                {"title": args.title, "agent": args.agent, "session_id": args.session_id}
+            )
+        elif tool == "checkpoint_task":
+            result = service.checkpoint_task(
+                {
+                    "task_id": args.task_id,
+                    "summary": args.summary,
+                    "reason": args.reason,
+                    "tests": _parse_test_hints(args.tests),
+                }
+            )
+        else:
+            result = service.complete_task(
+                {
+                    "task_id": args.task_id,
+                    "summary": args.summary,
+                    "tests": _parse_test_hints(args.tests),
+                }
+            )
+    except ToolError as exc:
+        print(
+            json.dumps(exc.to_payload(), ensure_ascii=False, indent=2), file=sys.stderr
+        )
+        return 2
+    finally:
+        service.shutdown(timeout=5.0)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
