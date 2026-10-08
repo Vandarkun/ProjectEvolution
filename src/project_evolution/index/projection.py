@@ -27,7 +27,7 @@ import json
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 from pydantic import ValidationError as PydanticValidationError
@@ -39,6 +39,7 @@ from project_evolution.index.schema import (
     PROJECTION_TABLES,
     check_projection_integrity,
     create_schema,
+    get_meta,
     set_meta,
 )
 from project_evolution.index.store import ProjectionStore
@@ -51,8 +52,11 @@ from project_evolution.models import (
     FeatureChange,
     ParameterChange,
     RawEvent,
+    check_task_transition,
 )
 from project_evolution.tasks.state import (
+    # _LIFECYCLE_TARGET 是 Task 状态机的固定转换表，跨模块共用避免两份定义漂移
+    _LIFECYCLE_TARGET,
     SessionRuntimeState,
     TaskRuntimeState,
     project_session_states,
@@ -520,3 +524,351 @@ def _discard_partial(store: ProjectionStore, target: Path) -> None:
     for suffix in ("", "-wal", "-shm"):
         with contextlib.suppress(OSError):
             target.with_name(target.name + suffix).unlink()
+
+
+# -------------------------------------------------------------- incremental
+
+
+class UpdateReport(ProjectionResult):
+    """update_projection 的结果。"""
+
+    status: Literal["updated", "up-to-date", "rebuilt"]
+    applied_raw_events: int = 0
+    applied_evolution_events: int = 0
+
+
+def _payload_str(event: RawEvent, key: str) -> str:
+    value = event.payload.get(key)
+    if not isinstance(value, str) or not value:
+        raise ProjectionError(
+            f"{event.kind} event {event.id} (seq={event.seq}) "
+            f"payload.{key} must be a non-empty string"
+        )
+    return value
+
+
+def _apply_task_started(conn, event: RawEvent) -> None:
+    task_id = event.task_id
+    if task_id is None:
+        raise ProjectionError(f"task_started event {event.id} has no task_id")
+    if conn.execute("SELECT 1 FROM tasks WHERE task_id = ?", (task_id,)).fetchone():
+        raise ProjectionError(f"duplicate task_started for task {task_id}")
+    conn.execute(
+        "INSERT INTO tasks VALUES (?,?,?,?,?,?,?,?,?)",
+        (
+            task_id,
+            event.project_id,
+            _payload_str(event, "title"),
+            "active",
+            event.timestamp.isoformat(),
+            None,
+            None,
+            event.payload.get("baseline_ref"),
+            None,
+        ),
+    )
+    if event.session_id:
+        conn.execute(
+            "INSERT OR IGNORE INTO task_sessions VALUES (?,?,?,?)",
+            (task_id, event.session_id, event.timestamp.isoformat(), None),
+        )
+
+
+def _apply_task_lifecycle(conn, event: RawEvent) -> None:
+    task_id = event.task_id
+    if task_id is None:
+        raise ProjectionError(f"{event.kind} event {event.id} has no task_id")
+    row = conn.execute("SELECT status FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+    if row is None:
+        raise ProjectionError(
+            f"{event.kind} event {event.id} (seq={event.seq}) references unknown task {task_id}"
+        )
+    target = _LIFECYCLE_TARGET[event.kind]
+    try:
+        check_task_transition(str(row["status"]), target)
+    except PelError as exc:
+        raise ProjectionError(
+            f"{event.kind} event {event.id} (seq={event.seq}): {exc}"
+        ) from exc
+    terminal = target in ("completed", "cancelled")
+    conn.execute(
+        "UPDATE tasks SET status = ?, finished_at = ?, final_ref = ? WHERE task_id = ?",
+        (
+            target,
+            event.timestamp.isoformat() if terminal else None,
+            _opt_payload_str(event, "final_ref") if event.kind == "task_completed" else None,
+            task_id,
+        ),
+    )
+    if terminal:
+        conn.execute(
+            "UPDATE task_sessions SET left_at = ? "
+            "WHERE task_id = ? AND left_at IS NULL",
+            (event.timestamp.isoformat(), task_id),
+        )
+
+
+def _opt_payload_str(event: RawEvent, key: str) -> str | None:
+    value = event.payload.get(key)
+    if value is not None and not isinstance(value, str):
+        raise ProjectionError(
+            f"{event.kind} event {event.id} payload.{key} must be a string or null"
+        )
+    return value
+
+
+def _apply_checkpoint_created(conn, event: RawEvent) -> None:
+    assert event.checkpoint_id is not None
+    task_id = event.task_id
+    if task_id is None:
+        raise ProjectionError(f"checkpoint_created event {event.id} has no task_id")
+    row = conn.execute("SELECT status FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+    if row is None:
+        raise ProjectionError(
+            f"checkpoint_created event {event.id} references unknown task {task_id}"
+        )
+    if str(row["status"]) in ("completed", "cancelled"):
+        raise ProjectionError(
+            f"checkpoint_created event {event.id} (seq={event.seq}) on terminal "
+            f"task {task_id} (status={row['status']})"
+        )
+    index = event.payload.get("index")
+    if not isinstance(index, int) or isinstance(index, bool):
+        raise ProjectionError(
+            f"checkpoint_created event {event.id} payload.index must be an integer"
+        )
+    expected = int(
+        conn.execute(
+            "SELECT COALESCE(MAX(checkpoint_index), 0) + 1 FROM checkpoints WHERE task_id = ?",
+            (task_id,),
+        ).fetchone()[0]
+    )
+    if index != expected:
+        raise ProjectionError(
+            f"checkpoint index regression/out-of-order for task {task_id}: "
+            f"expected {expected}, got {index} (event {event.id}, seq={event.seq})"
+        )
+    conn.execute(
+        "INSERT INTO checkpoints VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        _checkpoint_row(event),
+    )
+    evidence = _checkpoint_evidence_row(event)
+    if evidence is not None:
+        conn.execute("INSERT OR IGNORE INTO evidence VALUES (?,?,?,?,?,?,?,?,?)", evidence)
+
+
+def _apply_session_started(conn, event: RawEvent) -> None:
+    session_id = event.session_id
+    if session_id is None:
+        raise ProjectionError(f"session_started event {event.id} has no session_id")
+    if conn.execute("SELECT 1 FROM sessions WHERE session_id = ?", (session_id,)).fetchone():
+        raise ProjectionError(f"duplicate session_started for session {session_id}")
+    conn.execute(
+        "INSERT INTO sessions VALUES (?,?,?,?,?,?)",
+        (
+            session_id,
+            event.project_id,
+            _payload_str(event, "agent"),
+            event.timestamp.isoformat(),
+            None,
+            _opt_payload_str(event, "external_session_id"),
+        ),
+    )
+
+
+def _apply_session_ended(conn, event: RawEvent) -> None:
+    session_id = event.session_id
+    if session_id is None:
+        raise ProjectionError(f"session_ended event {event.id} has no session_id")
+    row = conn.execute(
+        "SELECT ended_at FROM sessions WHERE session_id = ?", (session_id,)
+    ).fetchone()
+    if row is None:
+        raise ProjectionError(
+            f"session_ended event {event.id} references unknown session {session_id}"
+        )
+    if row["ended_at"] is not None:
+        raise ProjectionError(f"duplicate session_ended for session {session_id}")
+    conn.execute(
+        "UPDATE sessions SET ended_at = ? WHERE session_id = ?",
+        (event.timestamp.isoformat(), session_id),
+    )
+    conn.execute(
+        "UPDATE task_sessions SET left_at = ? WHERE session_id = ? AND left_at IS NULL",
+        (event.timestamp.isoformat(), session_id),
+    )
+
+
+def _apply_task_session_bound(conn, event: RawEvent) -> None:
+    task_id = event.task_id
+    session_id = event.session_id
+    if task_id is None:
+        raise ProjectionError(f"task_session_bound event {event.id} has no task_id")
+    if session_id is None:
+        raise ProjectionError(f"task_session_bound event {event.id} has no session_id")
+    if not conn.execute("SELECT 1 FROM tasks WHERE task_id = ?", (task_id,)).fetchone():
+        raise ProjectionError(
+            f"task_session_bound event {event.id} references unknown task {task_id}"
+        )
+    # 同一 Session 转绑其他 Task 时关闭旧的 open link（与全量投影语义一致）
+    conn.execute(
+        "UPDATE task_sessions SET left_at = ? "
+        "WHERE session_id = ? AND task_id != ? AND left_at IS NULL",
+        (event.timestamp.isoformat(), session_id, task_id),
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO task_sessions VALUES (?,?,?,?)",
+        (task_id, session_id, event.timestamp.isoformat(), None),
+    )
+
+
+def _apply_file_event(conn, event: RawEvent) -> None:
+    row = _file_change_row(event)
+    if row is not None:
+        conn.execute("INSERT INTO file_changes VALUES (?,?,?,?,?,?,?,?,?,?,?)", row)
+
+
+_RAW_HANDLERS = {
+    "task_started": _apply_task_started,
+    "task_paused": _apply_task_lifecycle,
+    "task_resumed": _apply_task_lifecycle,
+    "task_completed": _apply_task_lifecycle,
+    "task_cancelled": _apply_task_lifecycle,
+    "checkpoint_created": _apply_checkpoint_created,
+    "session_started": _apply_session_started,
+    "session_ended": _apply_session_ended,
+    "task_session_bound": _apply_task_session_bound,
+    "file_added": _apply_file_event,
+    "file_modified": _apply_file_event,
+    "file_deleted": _apply_file_event,
+}
+
+
+def _apply_raw_event(conn, event: RawEvent) -> None:
+    conn.execute(
+        "INSERT INTO raw_events VALUES (?,?,?,?,?,?,?,?,?,?)", _raw_event_row(event)
+    )
+    handler = _RAW_HANDLERS.get(event.kind)
+    if handler is not None:
+        handler(conn, event)
+
+
+def _apply_evolution_event(conn, event: EvolutionEvent) -> None:
+    conn.execute(
+        "INSERT INTO evolution_events VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        _evolution_event_row(event),
+    )
+    sql, row_builder = _SEMANTIC_INSERTS[event.type]
+    conn.execute(sql, row_builder(event))
+
+
+def _mark_stale(store: ProjectionStore) -> None:
+    """SQLite 更新失败：标记 projection stale（Canonical Event 保持成功，07 §5）。"""
+    with contextlib.suppress(Exception):
+        conn = store.connect(store.db_path(store.current_version()))
+        try:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            set_meta(conn, "stale", "1")
+        finally:
+            conn.close()
+
+
+def update_projection(
+    project_root: str | Path, *, config: PelConfig | None = None
+) -> UpdateReport:
+    """把当前 DB 增量追平到 Ledger head（07-storage-and-index.md §5）。
+
+    - 无 DB（首次/被删）或 schema 版本不兼容 -> 自动 full rebuild；
+    - 持有与写入方相同的 Ledger 写锁，读水位 -> 应用新事件 -> 推进水位，
+      整体在一个 SQLite 事务内；
+    - SQLite 更新失败：Canonical Ledger 不回滚，projection 标记 stale，
+      后续 rebuild 即可恢复（07 §5"绝不能为了 SQLite 回滚真实历史"）。
+
+    :raises ProjectionError: 应用失败（水位未推进，DB 标记 stale）。
+    """
+    root = Path(project_root)
+    config = config if config is not None else load_config(root)
+    raw_path, evo_path, lock_path = _ledger_paths(root, config)
+    store = ProjectionStore(root / PEL_DIR_NAME / config.runtime_dir)
+    raw_ledger = RawEventLedger(root, events_path=raw_path, lock_path=lock_path)
+    evo_ledger = EvolutionEventLedger(root, events_path=evo_path, lock_path=lock_path)
+
+    version = store.current_version()
+    if (
+        version < 1
+        or not store.db_path(version).exists()
+        or _projection_schema_mismatch(store, version)
+    ):
+        report = rebuild_projection(root, config=config)
+        return UpdateReport(
+            status="rebuilt",
+            version=report.version,
+            db_path=report.db_path,
+            counts=report.counts,
+        )
+
+    with write_lock(lock_path, timeout=_REBUILD_LOCK_TIMEOUT):
+        conn = store.connection()
+        raw_watermark = int(get_meta(conn, "raw_seq") or "0")
+        evo_watermark = int(get_meta(conn, "evo_seq") or "0")
+        new_raw = [
+            event for event in raw_ledger.iter_events() if (event.seq or 0) > raw_watermark
+        ]
+        new_evo = [
+            event for event in evo_ledger.iter_events() if (event.seq or 0) > evo_watermark
+        ]
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            for event in new_raw:
+                _apply_raw_event(conn, event)
+            for evolution_event in new_evo:
+                _apply_evolution_event(conn, evolution_event)
+            if new_raw:
+                set_meta(conn, "raw_seq", str(new_raw[-1].seq))
+            if new_evo:
+                set_meta(conn, "evo_seq", str(new_evo[-1].seq))
+            set_meta(conn, "stale", "0")  # 追平即清除 stale（事务保证内容一致）
+            set_meta(conn, "source", "incremental")
+            set_meta(conn, "updated_at", datetime.now(timezone.utc).isoformat())
+            conn.execute("COMMIT")
+            counts = _table_counts(conn)
+        except PelError:
+            _rollback(conn)
+            _mark_stale(store)
+            raise
+        except BaseException as exc:  # noqa: BLE001 - 失败必须标记 stale 并显式抛出
+            _rollback(conn)
+            _mark_stale(store)
+            raise ProjectionError(f"incremental projection failed: {exc}") from exc
+        finally:
+            # 写路径连接短生命周期：显式释放，Windows 下不残留文件句柄
+            store.close()
+
+    status: Literal["updated", "up-to-date"] = (
+        "updated" if (new_raw or new_evo) else "up-to-date"
+    )
+    return UpdateReport(
+        status=status,
+        version=version,
+        db_path=str(store.db_path(version)),
+        applied_raw_events=len(new_raw),
+        applied_evolution_events=len(new_evo),
+        counts=counts,
+    )
+
+
+def _projection_schema_mismatch(store: ProjectionStore, version: int) -> bool:
+    """当前 DB 的投影 schema 版本与本实现不兼容（未来版本的显式迁移点）。"""
+    conn = store.connect(store.db_path(version))
+    try:
+        current = get_meta(conn, "schema_version")
+    finally:
+        conn.close()
+    return current is not None and int(current) != PROJECTION_SCHEMA_VERSION
+
+
+def _rollback(conn) -> None:
+    if conn.in_transaction:
+        with contextlib.suppress(Exception):
+            conn.execute("ROLLBACK")
