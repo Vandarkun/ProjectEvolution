@@ -200,6 +200,15 @@ class EvidenceRecord(BaseModel):
     metadata: dict = Field(default_factory=dict)
 
 
+class ProvenanceSummary(BaseModel):
+    """Evidence / Provenance 摘要（Evolution Report §10）。"""
+
+    raw_events: int
+    evolution_events: int
+    evidence_records: int
+    referenced_evidence_ids: list[str] = Field(default_factory=list)
+
+
 class ProjectionStatus(BaseModel):
     """SQLite 与 Ledger head 的同步标记（07 §13）。"""
 
@@ -334,6 +343,11 @@ class QueryService:
     @property
     def store(self) -> ProjectionStore:
         return self._store
+
+    @property
+    def root(self) -> Path:
+        """项目根（Dashboard / CLI 展示项目名等只读用途）。"""
+        return self._root
 
     def _connect(self):
         """取当前版本连接（指针变化自动重建；未建库时明确报错）。"""
@@ -959,6 +973,39 @@ class QueryService:
             task_id=row["task_id"],
             checkpoint_id=row["checkpoint_id"],
             metadata=_loads(row["metadata"], {}),
+        )
+
+    def get_provenance(self) -> ProvenanceSummary:
+        """事件 / Evidence 计数与被引用的 Evidence ID 集合（Report §10）。"""
+        conn = self._connect()
+        try:
+            counts = {
+                str(row["src"]): int(row["n"])
+                for row in conn.execute(
+                    "SELECT 'raw' AS src, COUNT(*) AS n FROM raw_events "
+                    "UNION ALL SELECT 'evo', COUNT(*) FROM evolution_events "
+                    "UNION ALL SELECT 'evidence', COUNT(*) FROM evidence"
+                )
+            }
+            referenced = {
+                str(eid)
+                for row in conn.execute("SELECT evidence_ids FROM evolution_events")
+                for eid in _loads(row["evidence_ids"], [])
+            }
+            referenced.update(
+                str(row["diff_evidence_id"])
+                for row in conn.execute(
+                    "SELECT diff_evidence_id FROM checkpoints "
+                    "WHERE diff_evidence_id IS NOT NULL"
+                )
+            )
+        finally:
+            conn.close()
+        return ProvenanceSummary(
+            raw_events=counts.get("raw", 0),
+            evolution_events=counts.get("evo", 0),
+            evidence_records=counts.get("evidence", 0),
+            referenced_evidence_ids=sorted(referenced),
         )
 
     # ---------------------------------------------------------- current state
