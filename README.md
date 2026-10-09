@@ -3,7 +3,7 @@
 面向 Coding Agent 的项目工程演进记录系统。回答一个核心问题：
 **这个项目是怎样一步一步变成现在这样的？**
 
-当前实现（Phase 01 ~ Phase 08）：
+当前实现（Phase 01 ~ Phase 09）：
 
 - **领域模型库**（`project_evolution.models`）：Project / Session / Task /
   TaskSessionLink / Checkpoint / RawEvent / Evidence / EvolutionEvent /
@@ -265,3 +265,12 @@ This project uses the Project Evolution Ledger (PEL) MCP tools.
 
 Do not call these tools every turn — only at the moments above.
 ```
+- **真实项目验证**（Phase 09，`docs/06-validation/`）：以 ScreenPin 为目标、
+  ZCode 为 Coding Agent、DeepSeek 为分析模型完成 6 个真实任务（含 1 个
+  3-checkpoint 跨会话长任务）+ 七项故障注入。产出 23 条语义事件
+  （12 decision / 6 feature / 3 parameter / 2 bug_fix，建议标注 FP=0）、
+  完整 Evolution Report 导出与 V0.1 Release Gate 十条核对（全部通过，
+  FP 率待人工标注确认）。验证期间发现并修复两处 phase-05 缺陷：
+  模型输出缺 `events` 键被静默当 NOOP；digest 清单内 RAW 证据 id 被
+  存在性校验误拒（三连漏检根因）。详见
+  `project-evolution-ledger-docs/docs/06-validation/phase-09-validation-report.md`。
