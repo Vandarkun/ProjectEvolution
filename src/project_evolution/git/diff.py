@@ -86,10 +86,19 @@ class _DiffContext:
 def compute_increment(
     old: WorktreeSnapshot, new: WorktreeSnapshot, *, adapter: GitAdapter, blobs: BlobStore
 ) -> SnapshotIncrement:
-    """对比两份快照，逐文件计算增量 diff 并识别 rename。"""
+    """对比两份快照，逐文件计算增量 diff 并识别 rename。
+
+    迭代空间是两份快照 ``files`` 键的并集，**再加上**两个 HEAD 之间有差异
+    的路径（06 §4）：Agent 在 Checkpoint 之间 commit 后工作区变干净，被
+    commit 的改动不会出现在任何一方的 ``files`` 里，只对比快照会整体漏掉
+    （HEAD 区间枚举是补充，不替代工作区快照对比——未提交修改仍以后者为准）。
+    """
     ctx = _DiffContext(adapter, blobs)
+    paths = set(old.files) | set(new.files)
+    if old.head and new.head and old.head != new.head:
+        paths |= set(adapter.changed_paths_between(old.head, new.head))
     changes: list[FileChange] = []
-    for path in sorted(set(old.files) | set(new.files)):
+    for path in sorted(paths):
         in_old, in_new = path in old.files, path in new.files
         old_hash = old.files.get(path)
         new_hash = new.files.get(path)

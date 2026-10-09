@@ -74,12 +74,13 @@ class EvolutionReport(BaseModel):
 
 
 def project_display_name(root: str | Path) -> str:
-    return Path(root).name or str(root)
+    """项目显示名：resolve 后取目录名，避免 `--project .` 显示为 "."。"""
+    return Path(root).resolve().name or str(root)
 
 
 def build_overview(service: QueryService) -> Overview:
     """Project Overview（11 §2）：摘要 + 最近事件 + 当前状态。"""
-    root = service.root
+    root = Path(service.root).resolve()
     tasks = service.list_tasks()
     active = [brief for brief in tasks if brief.status not in ("completed", "cancelled")]
     timeline = service.get_timeline()

@@ -92,7 +92,7 @@ class CheckpointService:
         agent_summary: str | None = None,
         agent_changed_files: Sequence[str] = (),
     ) -> Checkpoint:
-        """创建 Checkpoint：采集证据 → checkpoint_created → file events → journal。
+        """创建 Checkpoint：采集证据 → checkpoint_created → file/commit events → journal。
 
         Agent 事实提示（phase-07，08-mcp-integration.md §5）：
 
@@ -162,6 +162,7 @@ class CheckpointService:
             events = [event]
             if evidence is not None:
                 events.extend(evidence.file_events)
+                events.extend(evidence.commit_events)
             events.extend(
                 _hint_events(
                     project_id=state.project_id,

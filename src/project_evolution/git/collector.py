@@ -17,10 +17,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from project_evolution.git.adapter import GitAdapter
+from project_evolution.git.adapter import GitAdapter, GitError
 from project_evolution.git.baseline import (
     BlobStore,
     SnapshotStore,
+    WorktreeSnapshot,
     capture_worktree_snapshot,
 )
 from project_evolution.git.diff import FileChange, SnapshotIncrement, compute_increment
@@ -138,8 +139,68 @@ class GitCheckpointCollector:
             snapshot_path=relative,
             diff_evidence=evidence,
             file_events=file_events,
+            commit_events=self._commit_events(
+                previous, snapshot,
+                project_id=self._project_id, task_id=task_id,
+                checkpoint_id=checkpoint_id, session_id=session_id, source=source,
+                evidence_id=evidence.id if evidence is not None else None,
+            ),
             scope_confidence=scope_confidence,
         )
+
+    def _commit_events(
+        self,
+        previous: WorktreeSnapshot | None,
+        snapshot: WorktreeSnapshot | None,
+        *,
+        project_id: str,
+        task_id: str,
+        checkpoint_id: str,
+        session_id: str | None,
+        source: str,
+        evidence_id: str | None,
+    ) -> list[RawEvent]:
+        """上一快照 HEAD → 当前 HEAD 之间的提交 → git_commit RawEvents（06 §9）。
+
+        归属依据是"Checkpoint 记录的 commit"（区间由快照链划定），不做时间
+        猜测；提交列表是补充证据，git log 失败时返回空列表不阻塞 checkpoint。
+        """
+        if (
+            previous is None
+            or snapshot is None
+            or not previous.head
+            or not snapshot.head
+            or previous.head == snapshot.head
+        ):
+            return []
+        try:
+            commits = self._adapter.list_commits_between(previous.head, snapshot.head)
+        except GitError:
+            return []
+        events: list[RawEvent] = []
+        for meta in commits:
+            payload: dict = {
+                "sha": meta.sha,
+                "subject": meta.subject,
+                "author": meta.author,
+                "committed_at": meta.committed_at,
+            }
+            if evidence_id is not None:
+                payload["evidence_id"] = evidence_id
+            events.append(
+                RawEvent(
+                    id=new_id("RAW"),
+                    project_id=project_id,
+                    timestamp=datetime.now(timezone.utc),
+                    kind="git_commit",
+                    source=source,
+                    task_id=task_id,
+                    session_id=session_id,
+                    checkpoint_id=checkpoint_id,
+                    payload=payload,
+                )
+            )
+        return events
 
     def _load_latest_snapshot(self, task_id: str):
         """从 Ledger 找该 Task 最近一次记录的快照并加载。"""

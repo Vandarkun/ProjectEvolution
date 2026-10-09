@@ -22,9 +22,14 @@
   投影重建，`.runtime/tasks/` journal 只是恢复用镜像。
 - **Git 变化分析**（`project_evolution.git`）：只读 GitAdapter（子命令白名单 +
   超时 + 参数数组，`.project-evolution/` 从一切采集永久排除）、逐文件内容快照 +
-  sha256 blob 去重、快照间增量 diff（不做 patch 相减）、rename 识别（hash 精确 /
-  内容相似度 + find-renames 交叉验证）、diff evidence（patch 落
-  `evidence/diffs/`，secret 只记 path+hash 不落内容）、non-Git 明确降级。
+  sha256 blob 去重、快照间增量 diff（不做 patch 相减；迭代空间为两份快照
+  `files` 的并集 **并集上 HEAD 区间 diff 的路径**——Checkpoint 之间被 commit
+  的改动同样可见，06 §4）、rename 识别（hash 精确 / 内容相似度 + find-renames
+  交叉验证）、diff evidence（patch 落 `evidence/diffs/`，secret 只记 path+hash
+  不落内容）、checkpoint 间的新提交生成归属该 Task/Checkpoint 的
+  `git_commit` RawEvents（06 §9，只动 `.project-evolution/` 的提交被排除）、
+  采集用 pathspec 限定在项目子树（项目目录嵌套在外层仓库内时不串入父仓库
+  变更，06 §5）、non-Git 明确降级。
 - **ChangeDigest**（`project_evolution.evolution`）：发往模型的确定性变更摘要
   （changed/added/deleted/renamed、diff_stat、预算内 hunk 选取、truncated），
   privacy filter 硬编码排除 secret 与 PEL 自身目录，generated/binary/lock
@@ -108,7 +113,8 @@
     Decision / Bug-Fix / 关键 Changed Files / 当前状态 / Provenance 摘要），
     关键结论携带 `[EVO-*]` / `[RAW-*]` Event ID，可独立生成；
   - 安全（11 §9）：所有动态文本经统一 `html.escape` 管线（表格 / 列表 /
-    details 构建函数自动转义，无 raw HTML 出口）；恶意 commit message /
+    details 构建函数自动转义，无 raw HTML 出口）；所有响应带
+    `X-Content-Type-Options: nosniff`；恶意 commit message /
     title / patch 只显示为文本（XSS 测试保证）；本地服务默认仅监听
     loopback（`pel dashboard`，默认 `127.0.0.1:8642`）；Dashboard 只读且
     与 Core / MCP 完全解耦 —— 关闭/删除 Dashboard 不影响采集与 Ledger

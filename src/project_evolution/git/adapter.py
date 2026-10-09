@@ -58,6 +58,16 @@ def is_excluded_path(path: str) -> bool:
     return normalized == PEL_EXCLUDED_DIR or normalized.startswith(PEL_EXCLUDED_DIR + "/")
 
 
+def _subtree_scope(project_root: str | Path, toplevel: str | Path) -> str:
+    """项目根相对 repo root 的 posix 前缀；相等时返回空串。
+
+    :raises ValueError: 项目根不在仓库顶层之下（异常布局，调用方降级）。
+    """
+    rel = Path(project_root).resolve().relative_to(Path(toplevel).resolve())
+    text = rel.as_posix()
+    return "" if text == "." else text
+
+
 @dataclass(frozen=True)
 class StatusEntry:
     """`git status --porcelain=v1` 的一条记录。xy 为两字符状态码。"""
@@ -93,21 +103,33 @@ def _subcommand_of(args: list[str]) -> str | None:
 
 
 class GitAdapter:
-    """单个 Git 仓库的只读访问封装。"""
+    """单个 Git 仓库的只读访问封装。
 
-    def __init__(self, repo_root: Path, *, timeout: float = 10.0):
+    ``scope`` 是项目根相对 repo root 的 posix 前缀（项目根 == repo root 时为空）：
+    项目目录嵌套在更大的仓库里时，一切采集（status / diff / log）都用
+    pathspec 限定在该子树内，父仓库其余部分的变更绝不混入本项目证据
+    （06 §5：无法可靠归属时不伪造）。记录的路径统一为 repo 相对路径。
+    """
+
+    def __init__(self, repo_root: Path, *, scope: str = "", timeout: float = 10.0):
         self._root = Path(repo_root)
+        self._scope = scope.strip("/") if scope else ""
         self._timeout = timeout
 
     @property
     def repo_root(self) -> Path:
         return self._root
 
+    @property
+    def scope(self) -> str:
+        return self._scope
+
     @classmethod
     def detect(cls, project_root: str | Path, *, timeout: float = 10.0) -> GitAdapter | None:
         """探测 Git 仓库：成功返回 adapter，失败返回 None（non-Git 模式）。
 
-        绝不自动 `git init`（06 §2）。
+        绝不自动 `git init`（06 §2）。项目根不是仓库顶层时按子树 scope
+        采集；路径关系无法判定（跨盘符等异常布局）时返回 None 明确降级。
         """
         root = Path(project_root)
         try:
@@ -122,7 +144,11 @@ class GitAdapter:
         if proc.returncode != 0:
             return None
         toplevel = Path(proc.stdout.decode("utf-8", errors="replace").strip())
-        return cls(toplevel, timeout=timeout)
+        try:
+            scope = _subtree_scope(root, toplevel)
+        except (OSError, ValueError):
+            return None
+        return cls(toplevel, scope=scope, timeout=timeout)
 
     # ------------------------------------------------------------------ infra
 
@@ -161,6 +187,31 @@ class GitAdapter:
     def _run_text(self, args: list[str], **kwargs) -> str:
         return self._run(args, **kwargs).decode("utf-8", errors="replace")
 
+    def _pathspec_args(self) -> list[str]:
+        """把采集限定在项目子树内的 pathspec 参数（scope 为空 = 整个仓库）。"""
+        return ["--", self._scope] if self._scope else []
+
+    def _log_pathspec_args(self) -> list[str]:
+        """git log 专用 pathspec：限定 scope 且排除 PEL 目录。
+
+        只动过 ``.project-evolution/`` 记账文件的提交不是项目代码证据，
+        通过 ``:(exclude)`` 魔法前缀在 git 侧直接过滤（06 §8 自指风险）。
+        """
+        pel = f"{self._scope}/{PEL_EXCLUDED_DIR}" if self._scope else PEL_EXCLUDED_DIR
+        spec = [self._scope] if self._scope else []
+        spec.append(f":(exclude){pel}")
+        return ["--", *spec]
+
+    def _is_excluded(self, path: str) -> bool:
+        """scope 感知的 .project-evolution/ 排除（子树内 PEL 目录带 scope 前缀）。"""
+        normalized = normalize_path(path)
+        if is_excluded_path(normalized):
+            return True
+        if not self._scope:
+            return False
+        prefix = f"{self._scope}/{PEL_EXCLUDED_DIR}"
+        return normalized == prefix or normalized.startswith(prefix + "/")
+
     # ------------------------------------------------------------- repository
 
     def get_head_sha(self) -> str | None:
@@ -182,8 +233,8 @@ class GitAdapter:
     # ----------------------------------------------------------------- status
 
     def get_status_entries(self) -> list[StatusEntry]:
-        """工作区状态（含 untracked），已排除 .project-evolution/。"""
-        out = self._run(["status", "--porcelain=v1", "-z", "-uall"])
+        """工作区状态（含 untracked），限定项目 scope，已排除 .project-evolution/。"""
+        out = self._run(["status", "--porcelain=v1", "-z", "-uall", *self._pathspec_args()])
         tokens = out.decode("utf-8", errors="surrogateescape").split("\0")
         entries: list[StatusEntry] = []
         i = 0
@@ -200,11 +251,11 @@ class GitAdapter:
             else:
                 i += 1
             path = normalize_path(rest)
-            if is_excluded_path(path):
+            if self._is_excluded(path):
                 continue
             if orig is not None:
                 orig = normalize_path(orig)
-                if is_excluded_path(orig):
+                if self._is_excluded(orig):
                     continue
             entries.append(StatusEntry(xy=xy, path=path, orig_path=orig))
         return entries
@@ -256,9 +307,10 @@ class GitAdapter:
             args.append(base)
         if staged:
             args.append("--cached")
+        args.extend(self._pathspec_args())
         text = self._run_text(args)
         return [
-            line for line in text.splitlines() if line and not is_excluded_path(line.strip())
+            line for line in text.splitlines() if line and not self._is_excluded(line.strip())
         ]
 
     def diff_no_index(self, path_a: Path | str, path_b: Path | str, *, cwd: Path) -> str:
@@ -280,9 +332,12 @@ class GitAdapter:
         )
 
     def find_renames_between(self, old_rev: str, new_rev: str) -> dict[str, str]:
-        """`git diff --find-renames --name-status`：new_path -> old_path。"""
+        """`git diff --find-renames --name-status`：new_path -> old_path（限 scope）。"""
         out = self._run(
-            ["diff", "--find-renames", "--name-status", "-z", old_rev, new_rev]
+            [
+                "diff", "--find-renames", "--name-status", "-z",
+                old_rev, new_rev, *self._pathspec_args(),
+            ]
         )
         tokens = out.decode("utf-8", errors="surrogateescape").split("\0")
         renames: dict[str, str] = {}
@@ -301,6 +356,53 @@ class GitAdapter:
             else:
                 i += 1
         return renames
+
+    def changed_paths_between(self, old_rev: str, new_rev: str) -> list[str]:
+        """两个 revision 之间有差异的路径（限 scope，排除 .project-evolution/）。
+
+        06 §4：HEAD 区间是快照对比的补充来源——两次快照之间被 commit 的
+        改动不会出现在任何一方快照的 files 里（采集时工作区可能已干净）。
+        """
+        out = self._run(
+            ["diff", "--name-only", "-z", old_rev, new_rev, *self._pathspec_args()]
+        )
+        tokens = out.decode("utf-8", errors="surrogateescape").split("\0")
+        return [
+            path for path in map(normalize_path, tokens) if path and not self._is_excluded(path)
+        ]
+
+    def list_commits_between(self, old_rev: str, new_rev: str) -> list[CommitMetadata]:
+        """`old..new` 之间触及项目 scope 的提交（06 §9：checkpoint 记录的 commit）。
+
+        按提交时间正序（旧 → 新）返回，与 Ledger 的 seq 语义一致；
+        只动过 ``.project-evolution/`` 的提交被排除（见 ``_log_pathspec_args``）。
+
+        :raises GitError: git log 执行失败（调用方决定是否降级）。
+        """
+        out = self._run(
+            [
+                "log", "--format=%H%x00%an%x00%ae%x00%aI%x00%s%x1e",
+                f"{old_rev}..{new_rev}", *self._log_pathspec_args(),
+            ]
+        )
+        text = out.decode("utf-8", errors="replace")
+        commits: list[CommitMetadata] = []
+        for record in text.split("\x1e"):
+            record = record.strip("\n")
+            if not record:
+                continue
+            sha, author, email, at, subject = record.split("\0", 4)
+            commits.append(
+                CommitMetadata(
+                    sha=sha,
+                    author=author,
+                    author_email=email,
+                    committed_at=at,
+                    subject=subject,
+                )
+            )
+        commits.reverse()  # git log 按新 → 旧输出，翻转为时间正序
+        return commits
 
     # ------------------------------------------------------------- git objects
 

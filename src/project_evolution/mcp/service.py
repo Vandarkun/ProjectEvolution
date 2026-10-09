@@ -447,6 +447,16 @@ class PelToolService:
                 self._project_block(runtime), kind, query_value,
                 [history.model_dump(mode="json")], projection,
             )
+        if kind == "file":
+            if not query_value:
+                raise ToolError(
+                    INVALID_ARGUMENT, "'query' (file path) is required for kind=file"
+                )
+            file_history = service.get_file_history(query_value)
+            return _history_response(
+                self._project_block(runtime), kind, query_value,
+                [file_history.model_dump(mode="json")], projection,
+            )
         if kind in ("parameter", "feature", "decision") and not query_value:
             raise ToolError(
                 INVALID_ARGUMENT, f"'query' (name/subject) is required for kind={kind}"
@@ -461,7 +471,7 @@ class PelToolService:
         elif kind == "decision":
             decision = service.get_decision_history(query_value or "")
             results = [decision.model_dump(mode="json")]
-        else:  # bug
+        elif kind == "bug":
             items = service.get_bug_history()
             if query_value:
                 needle = query_value.lower()
@@ -473,6 +483,8 @@ class PelToolService:
             results = _clip_list(
                 [item.model_dump(mode="json") for item in items], limit
             )
+        else:  # _HISTORY_KINDS 已在入口校验，这里只可能是程序性遗漏
+            raise ToolError(INVALID_ARGUMENT, f"unsupported history kind: {kind!r}")
         if kind in ("parameter", "feature", "decision"):
             results = _clip_history_lists(results, limit)
         return _history_response(

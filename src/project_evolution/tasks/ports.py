@@ -36,6 +36,9 @@ class CheckpointEvidence(BaseModel):
     #: 本 checkpoint 增量产生的 changed-file RawEvents（file_added/modified/deleted），
     #: 由 CheckpointService 在 checkpoint_created 之后统一追加。
     file_events: list[RawEvent] = Field(default_factory=list)
+    #: 上一快照 HEAD → 当前 HEAD 之间触及项目范围的提交（06 §9 git_commit
+    # RawEvents，归属当前 Task/Checkpoint；枚举失败时为空，不影响主流程）。
+    commit_events: list[RawEvent] = Field(default_factory=list)
     #: 快照链缺失等无法可靠区分归属时必须显式标记，而不是假装精确
     scope_confidence: str = "normal"
 

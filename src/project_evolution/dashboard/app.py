@@ -67,6 +67,13 @@ def create_app(project_root: str | Path, *, config: PelConfig | None = None) -> 
         description="Read-only dashboard over the Project Evolution Query Service.",
     )
 
+    @app.middleware("http")
+    async def _nosniff_header(request: Any, call_next: Any) -> Any:
+        """所有响应带 nosniff：JSON 中的用户文本（如任务标题）永不被浏览器嗅探为 HTML。"""
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+
     # ------------------------------------------------------------- json api
 
     @app.get("/api/overview")
@@ -106,15 +113,24 @@ def create_app(project_root: str | Path, *, config: PelConfig | None = None) -> 
     def api_parameter(
         name: str, scope: str | None = Query(default=None)  # noqa: B008
     ) -> Any:
-        return query().get_parameter_history(name, scope=scope).model_dump(mode="json")
+        history = query().get_parameter_history(name, scope=scope)
+        if not history.changes:
+            raise HTTPException(status_code=404, detail=f"parameter not found: {name}")
+        return history.model_dump(mode="json")
 
     @app.get("/api/features/{name}")
     def api_feature(name: str) -> Any:
-        return query().get_feature_history(name).model_dump(mode="json")
+        history = query().get_feature_history(name)
+        if not history.changes:
+            raise HTTPException(status_code=404, detail=f"feature not found: {name}")
+        return history.model_dump(mode="json")
 
     @app.get("/api/decisions/{subject}")
     def api_decision(subject: str) -> Any:
-        return query().get_decision_history(subject).model_dump(mode="json")
+        history = query().get_decision_history(subject)
+        if not history.decisions:
+            raise HTTPException(status_code=404, detail=f"decision not found: {subject}")
+        return history.model_dump(mode="json")
 
     @app.get("/api/bugs")
     def api_bugs(scope: str | None = Query(default=None)) -> Any:  # noqa: B008
