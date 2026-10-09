@@ -133,13 +133,18 @@ def test_noop_checkpoint_records_nothing_and_caches(tmp_path: Path) -> None:
 
     def noop(request) -> AnalyzerResponse:
         calls.append(1)
-        return AnalyzerResponse(events=[])
+        return AnalyzerResponse(events=[], raw_output='{"events": []}')
 
     analyzer = EvolutionAnalyzerService(repo, MockProvider(responder=noop))
     first = analyzer.analyze_checkpoint(task.id, checkpoint.id)
     assert first.status == "noop" and first.noop is True
     assert first.events == []
     assert not (repo / ".project-evolution" / "events" / "evolution.jsonl").exists()
+    # NOOP 无事件落账，runtime 记录必须保留原始输出头部供事后排障
+    records_dir = repo / ".project-evolution" / ".runtime" / "analyses"
+    record_files = list(records_dir.glob("*.json"))
+    assert len(record_files) == 1
+    assert '"raw_head": "{\\"events\\": []}"' in record_files[0].read_text(encoding="utf-8")
 
     second = analyzer.analyze_checkpoint(task.id, checkpoint.id)
     assert second.status == "existing" and second.noop is True

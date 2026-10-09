@@ -99,6 +99,9 @@ class AnalysisRecord(BaseModel):
     event_ids: list[str] = Field(default_factory=list)
     provider: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    #: 模型原始输出头部（诊断用）。NOOP 无事件落账，事后排障只能靠它；
+    #: 旧记录无此字段，读取时按空串兼容。
+    raw_head: str = ""
 
 
 class PendingRetryResult(BaseModel):
@@ -312,6 +315,7 @@ class EvolutionAnalyzerService:
                 status=outcome.status,
                 event_ids=[event.id for event in events],
                 provider=outcome.provider,
+                raw_head=(getattr(response, "raw_output", "") or "")[:2000],
             )
         )
         self.pending.remove_for_checkpoint(task_id, checkpoint_id)

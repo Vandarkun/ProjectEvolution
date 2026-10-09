@@ -179,6 +179,23 @@ def test_parse_model_output_rejects_garbage() -> None:
         parse_model_output('{"events": "yes"}')
 
 
+def test_parse_model_output_rejects_missing_events_key() -> None:
+    """prompt 契约要求顶层 ``{"events": [...]}``；缺失/为 null 是模型违约，
+    必须作为 invalid_output 进入 pending 可重试——静默当作 NOOP 会把
+    服务端退化响应（空壳/包装对象/截断 JSON）伪装成健康的空结果。"""
+    with pytest.raises(ProviderError) as excinfo:
+        parse_model_output('{"result": "ok"}')
+    assert excinfo.value.kind == "invalid_output"
+    with pytest.raises(ProviderError):
+        parse_model_output('{"events": null}')
+    with pytest.raises(ProviderError):
+        parse_model_output('{"response": {"events": []}}')
+
+
+def test_parse_model_output_accepts_empty_events_list() -> None:
+    assert parse_model_output('{"events": []}').events == []
+
+
 # ------------------------------------------------------- providers (stubbed)
 
 

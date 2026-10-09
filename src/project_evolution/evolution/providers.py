@@ -104,11 +104,20 @@ def extract_json_object(text: str) -> dict[str, Any]:
 
 
 def parse_model_output(text: str, *, model: str | None = None) -> AnalyzerResponse:
-    """把模型文本输出解析为 AnalyzerResponse（events 非法结构 -> ProviderError）。"""
+    """把模型文本输出解析为 AnalyzerResponse（events 非法结构 -> ProviderError）。
+
+    prompt 契约要求顶层 ``{"events": [...]}``。缺失 ``events`` 键或值为 null
+    属于模型违约（常见于服务端退化响应：空壳/包装对象/截断 JSON），按
+    ``invalid_output`` 抛出进入 pending 可重试——静默当作 NOOP 会把这类
+    响应伪装成健康的空结果（phase-09 真实项目验证中实际发生）。
+    """
     obj = extract_json_object(text)
     events = obj.get("events")
     if events is None:
-        obj = {"events": [], **obj}
+        raise ProviderError(
+            f"'events' key missing or null in model output: {text[:200]!r}",
+            kind="invalid_output",
+        )
     if not isinstance(obj.get("events"), list):
         raise ProviderError(
             f"'events' must be a list, got {type(obj.get('events')).__name__}",
