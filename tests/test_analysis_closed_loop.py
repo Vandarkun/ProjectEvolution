@@ -123,6 +123,48 @@ def test_retry_is_idempotent_same_analysis_key(tmp_path: Path) -> None:
     assert second.analysis_id == first.analysis_id
     assert second.events == first.events
     assert len(calls) == 1  # 幂等命中后不再调用模型
+
+
+def test_model_citing_agent_summary_evidence_is_accepted(tmp_path: Path) -> None:
+    """digest 证据清单里的 test_result / agent_summary 条目以 RAW 事件 id 为 ID。
+
+    模型引用它们必须通过存在性校验（05 §4：测试结果与 agent summary 都是合法
+    证据来源）。phase-09 真实项目验证发现 known_evidence_ids 只收 EVD diff id，
+    引用 RAW id 的整批候选被 EVIDENCE_UNKNOWN 拒绝、静默变 noop。
+    """
+
+    def respond(request) -> AnalyzerResponse:
+        summary_ev = [e for e in request.digest.evidence if e.type == "raw_event"]
+        assert summary_ev, "digest manifest must contain the agent_summary evidence"
+        return AnalyzerResponse(
+            events=[
+                CandidateEvent(
+                    type="decision",
+                    title="采用智能提取顺序",
+                    description="QR 优先 OCR 兜底",
+                    evidence_ids=[summary_ev[0].id],
+                    payload={
+                        "subject": "内容提取顺序",
+                        "decision": "QR 优先",
+                        "reason": "确定性解码优先",
+                        "alternatives": ["OCR 优先"],
+                        "supersedes": [],
+                    },
+                )
+            ]
+        )
+
+    repo, services, task, _checkpoint = setup_task_with_change(tmp_path)
+    checkpoint = services.checkpoints.create_checkpoint(
+        task.id,
+        summary="补记 agent 事实摘要",
+        agent_summary="最低透明度 0.2 提高到 0.3，避免贴图过淡不可读",
+        tests=[{"command": "dotnet build", "status": "passed", "source": "agent_claim"}],
+    )
+    analyzer = EvolutionAnalyzerService(repo, MockProvider(responder=respond))
+    outcome = analyzer.analyze_checkpoint(task.id, checkpoint.id)
+    assert outcome.status == "committed", [str(r) for r in outcome.rejections]
+    assert outcome.events[0].evidence_ids[0].startswith("RAW-")
     assert len(list(iter_evolution_events(repo))) == 1
 
 

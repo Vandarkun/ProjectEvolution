@@ -427,6 +427,10 @@ class EvolutionAnalyzerService:
         digest.evidence = [evidence_entries[key] for key in sorted(evidence_entries)]
         digest.test_results = test_results
         digest.agent_summaries = agent_summaries
+        # digest 清单是本 Checkpoint 合法证据的全集：test_result / agent_summary 以
+        # RAW 事件 id 为 ID，它们不出现在任何 payload 字段里，必须在这里并入
+        # known_ids，否则 Validator 的存在性检查会拒绝清单内 ID（phase-09 发现）
+        known_ids.update(evidence_entries)
 
         payload = checkpoint_event.payload
         request = AnalyzerRequest(
