@@ -30,6 +30,7 @@ from project_evolution.index import QueryService, update_projection
 from project_evolution.index.query import ProjectionStatus
 from project_evolution.mcp.errors import (
     EVIDENCE_NOT_FOUND,
+    INTERNAL_ERROR,
     INVALID_ARGUMENT,
     LEDGER_WRITE_FAILED,
     TASK_NOT_FOUND,
@@ -556,6 +557,28 @@ class PelToolService:
         if warning is not None:
             block["warning"] = warning
         return block
+
+    def search_events(self, arguments: Mapping[str, Any]) -> dict[str, Any]:
+        """语义召回（retrieval extra）：按相关度返回事件引用，不生成内容。"""
+        query = _required_str(arguments, "query")
+        limit = arguments.get("limit", 10)
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 50:
+            raise ToolError(INVALID_ARGUMENT, "'limit' must be an integer in [1, 50]")
+        runtime = self._resolve(arguments.get("project"))
+        projection = self._catch_up(runtime)
+        from project_evolution.retrieval.embedder import RetrievalError
+
+        try:
+            hits = runtime.query.search_events(query, limit=limit)
+        except RetrievalError as exc:
+            raise ToolError(INTERNAL_ERROR, f"semantic search unavailable: {exc}") from exc
+        return {
+            "project": self._project_block(runtime),
+            "query": query,
+            "count": len(hits),
+            "results": [hit.model_dump(mode="json") for hit in hits],
+            "projection": projection,
+        }
 
 
 # ------------------------------------------------------------------ helpers

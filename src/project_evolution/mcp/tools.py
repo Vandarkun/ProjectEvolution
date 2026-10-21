@@ -178,6 +178,25 @@ TOOL_SPECS: list[dict[str, Any]] = [
             "Progressive disclosure for evidence referenced by history results.",
         ),
     },
+    {
+        "name": "search_events",
+        "description": (
+            "Semantic search over evolution events (cross-language: Chinese "
+            "queries match English events and vice versa). Returns ranked "
+            "event references with scores; fetch full history/evidence via "
+            "get_history / get_evidence using the returned ids. Requires the "
+            "'retrieval' extra (local embedding model)."
+        ),
+        "inputSchema": _schema(
+            {
+                "project": _PROJECT_REF,
+                "query": {"type": "string", "description": "natural language query"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+            },
+            ["query"],
+            "Vector recall returns references only, never synthesized facts.",
+        ),
+    },
 ]
 
 def register_tools(
@@ -191,6 +210,7 @@ def register_tools(
         "get_project_state": service.get_project_state,
         "get_history": service.get_history,
         "get_evidence": service.get_evidence,
+        "search_events": service.search_events,
     }
 
 

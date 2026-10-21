@@ -155,6 +155,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="skip waiting for background analysis before exit",
     )
 
+    search = sub.add_parser(
+        "search", help="semantic search over evolution events (retrieval extra)"
+    )
+    search.add_argument("query", help="natural language query")
+    search.add_argument("--project", type=Path, default=Path.cwd(), help="project root")
+    search.add_argument("--limit", type=int, default=10, help="max hits (default 10)")
+    search.add_argument(
+        "--json", dest="as_json", action="store_true", help="machine-readable JSON output"
+    )
+
     export = sub.add_parser(
         "export", help="export the evolution report as markdown or html"
     )
@@ -234,6 +244,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.task_command == "complete":
             return _task_command(args, "complete_task")
         parser.error("task requires a subcommand (start | checkpoint | complete)")
+    if args.command == "search":
+        return _search(args)
     if args.command == "export":
         return _export(args)
     if args.command == "dashboard":
@@ -599,6 +611,31 @@ def _task_command(args: argparse.Namespace, tool: str) -> int:
 
 
 # --------------------------------------------------------------- phase-08
+
+
+def _search(args: argparse.Namespace) -> int:
+    """``pel search``：语义召回事件引用（向量只定位，事实按 ID 下钻）。"""
+    import json as _json
+
+    from project_evolution.index import QueryService
+    from project_evolution.retrieval.embedder import RetrievalError
+
+    service = QueryService(args.project)
+    try:
+        hits = service.search_events(args.query, limit=max(1, args.limit))
+    except RetrievalError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if args.as_json:
+        print(_json.dumps([h.model_dump(mode="json") for h in hits], ensure_ascii=False, indent=2))
+        return 0
+    if not hits:
+        print("(no matching events)")
+        return 0
+    for h in hits:
+        print(f"{h.score:+.4f}  {h.event_id}  [{h.type}] {h.title}")
+    print(f"\n{len(hits)} hit(s); use `pel export` or get_history/get_evidence for details")
+    return 0
 
 
 def _export(args: argparse.Namespace) -> int:

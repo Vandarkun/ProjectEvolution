@@ -1071,3 +1071,87 @@ class QueryService:
             recent_bug_fixes=[str(row["problem"]) for row in bug_rows],
             latest_version=None,  # V0.1 尚无 Version 事件，字段预留（02 §16/§17）
         )
+
+    # ------------------------------------------------------ vector search
+
+    def search_events(self, query: str, *, limit: int = 10) -> list[SearchHit]:
+        """跨语言语义召回（retrieval extra）：按相关度返回事件引用。
+
+        向量只负责定位（返回 event_id + score），事实与证据仍由投影/账本
+        按键提供——检索放宽的是"找到"，不是"可信"。
+        """
+        from project_evolution.retrieval.index import ensure_vectors, search_vectors
+
+        if not query.strip():
+            return []
+        embedder = _search_embedder()
+        conn = self._connect()
+        try:
+            rows = list(
+                conn.execute(
+                    "SELECT event_id, seq, type, title, description, timestamp, "
+                    "task_id, evidence_ids, payload FROM evolution_events ORDER BY seq"
+                )
+            )
+            by_id = {str(row["event_id"]): row for row in rows}
+            ensure_vectors(
+                conn,
+                [(str(row["event_id"]), _event_embedding_text(row)) for row in rows],
+                embedder,
+            )
+            hits = search_vectors(conn, query, embedder, limit=limit)
+            return [
+                SearchHit(
+                    event_id=hit.event_id,
+                    seq=int(by_id[hit.event_id]["seq"]),
+                    type=str(by_id[hit.event_id]["type"]),
+                    title=str(by_id[hit.event_id]["title"]),
+                    score=round(hit.score, 4),
+                    timestamp=_dt(by_id[hit.event_id]["timestamp"]),
+                    task_id=by_id[hit.event_id]["task_id"],
+                    evidence_ids=[
+                        str(e) for e in _loads(by_id[hit.event_id]["evidence_ids"], [])
+                    ],
+                )
+                for hit in hits
+                if hit.event_id in by_id and hit.score > 0.0
+            ]
+        finally:
+            conn.close()
+
+
+# -------------------------------------------------------- vector search
+
+
+class SearchHit(BaseModel):
+    """语义召回命中：向量只定位引用，事实按 event_id 从投影/账本取。"""
+
+    event_id: str
+    seq: int
+    type: str
+    title: str
+    score: float
+    timestamp: datetime
+    task_id: str | None
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+def _search_embedder():
+    """查询侧默认向量源（独立函数便于测试 monkeypatch）。"""
+    from project_evolution.retrieval.embedder import default_embedder
+
+    return default_embedder()
+
+
+def _event_embedding_text(row) -> str:
+    """事件 → 嵌入文本：标题 + 描述 + payload 关键字段（双语混合原样保留）。"""
+    payload = _loads(row["payload"], {})
+    keys = {
+        "parameter_change": ("name", "before", "after", "reason"),
+        "feature_change": ("feature", "action", "before", "after"),
+        "decision": ("subject", "decision", "reason", "alternatives"),
+        "bug_fix": ("problem", "cause", "fix"),
+    }
+    parts = [str(row["title"]), str(row["description"] or "")]
+    parts += [f"{k}={payload[k]}" for k in keys.get(str(row["type"]), ()) if k in payload]
+    return "\n".join(p for p in parts if p)

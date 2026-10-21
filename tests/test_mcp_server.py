@@ -53,6 +53,7 @@ class FakeService:
     complete_task = property(lambda self: self._record("complete_task"))
     get_project_state = property(lambda self: self._record("get_project_state"))
     get_history = property(lambda self: self._record("get_history"))
+    search_events = property(lambda self: self._record("search_events"))
 
     def get_evidence(self, arguments: Mapping[str, Any]) -> dict[str, Any]:
         if arguments.get("evidence_id") == "boom":
@@ -118,7 +119,7 @@ def test_ping_returns_empty_object(initialized: PelMcpServer) -> None:
 # ----------------------------------------------------------------- discovery
 
 
-def test_tools_list_exposes_six_tools_with_schemas(initialized: PelMcpServer) -> None:
+def test_tools_list_exposes_seven_tools_with_schemas(initialized: PelMcpServer) -> None:
     result = call(initialized, "tools/list")["result"]
     names = [tool["name"] for tool in result["tools"]]
     assert names == [
@@ -128,6 +129,7 @@ def test_tools_list_exposes_six_tools_with_schemas(initialized: PelMcpServer) ->
         "get_project_state",
         "get_history",
         "get_evidence",
+        "search_events",
     ]
     for tool in result["tools"]:
         assert tool["description"]
