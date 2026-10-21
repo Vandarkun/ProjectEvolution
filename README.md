@@ -275,7 +275,7 @@ Do not call these tools every turn — only at the moments above.
   存在性校验误拒（三连漏检根因）。详见
   `project-evolution-ledger-docs/docs/06-validation/phase-09-validation-report.md`。
 - **语义向量检索**（retrieval extra，`pip install project-evolution[retrieval]`）：
-  本地 ONNX 小模型（BAAI/bge-small-zh-v1.5，中英混合）为语义事件建立向量
+  本地 ONNX 小模型（paraphrase-multilingual-MiniLM，中英双语均衡，真实语料 A/B 实测选定）为语义事件建立向量
   索引，`pel search` / MCP `search_events` 跨语言召回——中文查询可命中英文
   事件、反之亦然（phase-09 实测的精确匹配盲区）。铁律不变：向量只返回
   事件引用（ID + 分数），事实与证据仍由账本/投影按键提供；向量表是可丢弃

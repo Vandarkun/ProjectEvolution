@@ -18,8 +18,9 @@ from typing import Protocol
 
 from project_evolution.errors import PelError
 
-#: 默认本地模型：中文为主、兼顾英文（事件标题双语混合是实测常态）
-DEFAULT_MODEL = "BAAI/bge-small-zh-v1.5"
+#: 默认本地模型：中英双语均衡（phase-09 真实语料 A/B 实测——中文查询不退步、
+#: 英文查询显著优于 bge-small-zh；换模型只需改这里并重嵌）
+DEFAULT_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
 
 class RetrievalError(PelError):
