@@ -1,6 +1,6 @@
 """pel init 脚手架：幂等合并、不覆盖既有配置、AGENTS.md 只追加一次。
 
-用户级配置（codex/deepcode）通过 monkeypatch Path.home 隔离到 tmp_path。
+用户级配置（codex/dsh）通过 monkeypatch Path.home 隔离到 tmp_path。
 """
 
 from __future__ import annotations
@@ -82,25 +82,6 @@ def test_codex_global_toml(home: Path, tmp_path: Path, with_uv) -> None:
     # 幂等：重跑不产生第二个 pel 段
     run_init("codex", project, None)
     assert config.read_text(encoding="utf-8").count("[mcp_servers.pel]") == 1
-
-
-def test_deepcode_settings_merge(home: Path, tmp_path: Path, with_uv) -> None:
-    project = tmp_path / "proj"
-    project.mkdir()
-    config = home / ".deepcode" / "settings.json"
-    config.parent.mkdir(parents=True)
-    config.write_text(
-        json.dumps({"MODEL": "deepseek-v4", "mcpServers": {"existing": {"command": "x"}}}),
-        encoding="utf-8",
-    )
-
-    run_init("deepcode", project, None)
-
-    data = json.loads(config.read_text(encoding="utf-8"))
-    assert data["MODEL"] == "deepseek-v4"  # 用户字段保留
-    assert data["mcpServers"]["existing"] == {"command": "x"}  # 既有服务器保留
-    assert data["mcpServers"]["pel"]["command"] == "uvx"
-    assert (project / "AGENTS.md").is_file()
 
 
 def test_unknown_harness_and_missing_project(tmp_path: Path, with_uv) -> None:

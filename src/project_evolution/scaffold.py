@@ -7,7 +7,7 @@
 - MCP 服务器命令默认用 ``uvx --from git+...`` 形式——换机器不依赖本地路径
   （可用 ``--server-command`` 覆盖为本地 venv 的 pel.exe）；
 - workspace 级配置（zcode）写显式 ``--project`` 绝对路径；用户级全局配置
-  （codex 的 config.toml、deepcode 的 settings.json）不写 ``--project``，
+  （codex 的 config.toml、dsh 的 cordis.yml）不写 ``--project``，
   由服务器按 cwd 自动解析（各 harness 以项目目录为工作目录启动服务器）。
 
 harness 扩展机制参考：
@@ -17,8 +17,6 @@ harness 扩展机制参考：
 - dsh       DeepSeek Harness（deepseek-ai/deepseek-harness）：用户级
             ``$DSH_HOME/cordis.yml``（默认 ``~/.dsh``）追加
             ``@deepseek-ai/dsh-mcp-client`` 插件条目；项目 AGENTS.md 生态原生
-- deepcode  deepcode-cli（另一个工具，勿与 dsh 混淆）：用户级
-            ``~/.deepcode/settings.json`` → ``mcpServers``
 """
 
 from __future__ import annotations
@@ -194,33 +192,6 @@ def init_codex(project: Path, server_command: str | None) -> ScaffoldResult:
     return result
 
 
-def init_deepcode(project: Path, server_command: str | None) -> ScaffoldResult:
-    """deepcode（ds harness）：~/.deepcode/settings.json → mcpServers 合并。"""
-    _require_uv()
-    result = ScaffoldResult("deepcode")
-    cmd = _server_command(None, server_command)  # 全局配置：cwd 自动解析项目
-
-    def mutate(data: dict) -> bool:
-        servers = data.setdefault("mcpServers", {})
-        entry = {"command": cmd[0], "args": cmd[1:]}
-        if servers.get("pel") == entry:
-            return False
-        servers["pel"] = entry
-        return True
-
-    config = Path.home() / ".deepcode" / "settings.json"
-    if _merge_json(config, mutate):
-        result.written.append(str(config))
-    else:
-        result.skipped.append(f"{config} (unchanged)")
-    if _write_agents_md(project):
-        result.written.append("AGENTS.md")
-    else:
-        result.skipped.append("AGENTS.md (already has PEL rules)")
-    result.notes.append("Deep Code 用 /mcp 查看连接状态；原生读项目 AGENTS.md")
-    return result
-
-
 def _dsh_home() -> Path:
     """dsh harness 主目录：$DSH_HOME 优先，默认 ~/.dsh（官方 config-catalog）。"""
     env = os.environ.get("DSH_HOME")
@@ -317,7 +288,6 @@ def init_dsh(project: Path, server_command: str | None) -> ScaffoldResult:
 HARNESSES = {
     "zcode": init_zcode,
     "codex": init_codex,
-    "deepcode": init_deepcode,
     "dsh": init_dsh,
     "deepseek-harness": init_dsh,
 }

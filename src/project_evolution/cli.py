@@ -156,12 +156,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     init_cmd = sub.add_parser(
-        "init", help="adapt a harness (zcode/codex/deepcode): MCP config + AGENTS.md"
+        "init", help="adapt a harness (zcode/codex/dsh): MCP config + AGENTS.md"
     )
     init_cmd.add_argument(
         "--agent",
         required=True,
-        choices=["zcode", "codex", "deepcode", "dsh", "deepseek-harness"],
+        choices=["zcode", "codex", "dsh", "deepseek-harness"],
         help="target coding agent harness (dsh = DeepSeek Harness)",
     )
     init_cmd.add_argument("--project", type=Path, default=Path.cwd(), help="project root")
