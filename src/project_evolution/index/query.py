@@ -1143,8 +1143,20 @@ def _search_embedder():
     return default_embedder()
 
 
+#: 嵌入文本的防御性上限：语义事件本就短（百余字符），上限只为挡住
+#: 病理性长字段（如超长 alternatives/reason）稀释嵌入信号——不是常规精简
+_EMBED_FIELD_CAP = 240
+_EMBED_TOTAL_CAP = 1200
+
+
 def _event_embedding_text(row) -> str:
-    """事件 → 嵌入文本：标题 + 描述 + payload 关键字段（双语混合原样保留）。"""
+    """事件 → 嵌入文本：标题 + 描述 + payload 关键字段（双语混合原样保留）。
+
+    不做关键词提炼/摘要等"精简"：真正的精简发生在写入侧（分析器把
+    上万字符 diff 蒸馏成百余字符语义事件），这里嵌的已是蒸馏产物；
+    name=代码标识符、before/after 等字段是有效检索信号（英文查询靠
+    标识符 token 命中），删掉反而伤召回。仅做长度防御性截断。
+    """
     payload = _loads(row["payload"], {})
     keys = {
         "parameter_change": ("name", "before", "after", "reason"),
@@ -1154,4 +1166,8 @@ def _event_embedding_text(row) -> str:
     }
     parts = [str(row["title"]), str(row["description"] or "")]
     parts += [f"{k}={payload[k]}" for k in keys.get(str(row["type"]), ()) if k in payload]
-    return "\n".join(p for p in parts if p)
+    text = "\n".join(p for p in parts if p)
+    if len(text) <= _EMBED_TOTAL_CAP:
+        return text
+    capped = "\n".join(p[:_EMBED_FIELD_CAP] for p in parts if p)
+    return capped[:_EMBED_TOTAL_CAP]

@@ -101,7 +101,7 @@ def search_vectors(
 ) -> list[VectorHit]:
     """全量点积（向量已归一化，点积即余弦），返回 top-k 事件 ID 引用。"""
     _ensure_table(con)
-    (query_vec,) = embedder.embed([query]) if query.strip() else ([],)
+    (query_vec,) = embedder.embed_query([query]) if query.strip() else ([],)
     if not query_vec:
         return []
 

@@ -41,6 +41,10 @@ class _CountingEmbedder:
     def name(self) -> str:
         return self.inner.name
 
+    def embed_query(self, texts: Sequence[str]) -> list[list[float]]:
+        self.calls += 1
+        return self.inner.embed_query(texts)
+
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
         self.calls += 1
         return self.inner.embed(texts)
@@ -198,3 +202,49 @@ def test_real_model_cross_language_recall(vec_repo: Path) -> None:
         hits_en = service.search_events("why was wheel opacity step changed", limit=3)
         assert hits_en
         assert any("透明度" in h.title for h in hits_en), "英文查询也应命中中文事件"
+
+
+def test_asymmetric_prefix_guard() -> None:
+    """E5 族模型自动加 query/passage 前缀（换模型不踩静默掉点坑）。"""
+    from project_evolution.retrieval.embedder import FastEmbedEmbedder, _prefixes_for
+
+    assert _prefixes_for("intfloat/multilingual-e5-large") == ("query: ", "passage: ")
+    assert _prefixes_for("BAAI/bge-small-zh-v1.5") is None
+    assert _prefixes_for(
+        "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    ) is None
+
+    class _FakeModel:
+        def embed(self, texts):
+            return [[1.0] for _ in texts]
+
+    e5 = FastEmbedEmbedder("intfloat/multilingual-e5-large")
+    e5._model = _FakeModel()
+    q, d = e5.embed_query(["hello"]), e5.embed(["hello"])
+    assert q == [[1.0]] and d == [[1.0]]  # 前缀不炸、向量照常归一化
+
+
+def test_embedding_text_defensive_cap() -> None:
+    """病理性超长字段被截断保护；正常语义事件不受影响。"""
+    from project_evolution.index.query import _EMBED_TOTAL_CAP, _event_embedding_text
+
+    class _Row(dict):
+        def __getitem__(self, k):  # sqlite3.Row 风格
+            return dict.__getitem__(self, k)
+
+    long_event = _Row(
+        title="T",
+        description="",
+        type="decision",
+        payload='{"subject": "s", "decision": "' + "x" * 5000 + '"}',
+    )
+    assert len(_event_embedding_text(long_event)) <= _EMBED_TOTAL_CAP
+
+    normal = _Row(
+        title="滚轮透明度步长 10% → 5%",
+        description="步进参数调整",
+        type="parameter_change",
+        payload='{"name": "OpacityMath.Step", "before": "0.1", "after": "0.05"}',
+    )
+    text = _event_embedding_text(normal)
+    assert "OpacityMath.Step" in text and len(text) < 200

@@ -32,12 +32,18 @@ class RetrievalError(PelError):
 
 
 class Embedder(Protocol):
-    """文本向量化协议：name 用于向量索引的版本标识（换模型自动重建）。"""
+    """文本向量化协议：name 用于向量索引的版本标识（换模型自动重建）。
+
+    ``embed`` 用于文档侧（事件文本），``embed_query`` 用于查询侧——
+    对称模型两者实现相同；不对称模型族（E5 等）必须区分（前缀不同）。
+    """
 
     @property
     def name(self) -> str: ...
 
     def embed(self, texts: Sequence[str]) -> list[list[float]]: ...
+
+    def embed_query(self, texts: Sequence[str]) -> list[list[float]]: ...
 
 
 class HashingEmbedder:
@@ -54,6 +60,9 @@ class HashingEmbedder:
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
         return [self._one(t) for t in texts]
 
+    def embed_query(self, texts: Sequence[str]) -> list[list[float]]:
+        return self.embed(texts)
+
     def _one(self, text: str) -> list[float]:
         vec = [0.0] * self._dim
         normalized = " ".join(text.lower().split())
@@ -68,10 +77,25 @@ class HashingEmbedder:
         return [v / norm for v in vec]
 
 
+#: 不对称模型族的必加前缀（查询侧 / 文档侧）。忘加前缀会静默掉点——
+#: 这是"换模型只改一行"承诺的护栏：E5 系换入时自动带上正确前缀。
+_ASYMMETRIC_PREFIXES: dict[str, tuple[str, str]] = {
+    "intfloat/": ("query: ", "passage: "),
+}
+
+
+def _prefixes_for(model: str) -> tuple[str, str] | None:
+    for family, prefixes in _ASYMMETRIC_PREFIXES.items():
+        if model.startswith(family) or f"/{family}" in model:
+            return prefixes
+    return None
+
+
 class FastEmbedEmbedder:
     """本地 ONNX 模型向量化（``pip install project-evolution[retrieval]``）。
 
     模型懒加载（首次 embed 才下载/加载）；向量 L2 归一化后点积即余弦。
+    不对称模型族（E5 等）自动加 query/passage 前缀，换模型无需改调用方。
     """
 
     def __init__(self, model: str = DEFAULT_MODEL):
@@ -81,6 +105,10 @@ class FastEmbedEmbedder:
     @property
     def name(self) -> str:
         return f"fastembed:{self._model_name}"
+
+    @property
+    def _prefixes(self) -> tuple[str, str] | None:
+        return _prefixes_for(self._model_name)
 
     def _ensure_model(self):
         if self._model is not None:
@@ -98,8 +126,18 @@ class FastEmbedEmbedder:
             raise RetrievalError(f"embedding model load failed: {exc}") from exc
 
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        return self._embed_texts(texts, passage_side=True)
+
+    def embed_query(self, texts: Sequence[str]) -> list[list[float]]:
+        return self._embed_texts(texts, passage_side=False)
+
+    def _embed_texts(self, texts: Sequence[str], *, passage_side: bool) -> list[list[float]]:
         if not texts:
             return []
+        prefixes = self._prefixes
+        if prefixes is not None:
+            prefix = prefixes[1] if passage_side else prefixes[0]
+            texts = [f"{prefix}{t}" for t in texts]
         self._ensure_model()
         assert self._model is not None  # _ensure_model 成功返回即已加载
         vectors = []
