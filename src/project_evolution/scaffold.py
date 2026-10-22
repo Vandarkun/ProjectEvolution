@@ -29,8 +29,10 @@ from pathlib import Path
 
 from project_evolution.errors import PelError
 
-#: uvx 直装源（不克隆仓库的一行命令体验）
+#: uvx 直装源（不克隆仓库的一行命令体验）。
+#: 服务器命令带 [retrieval] extra——否则 search_events 报缺依赖。
 GIT_SOURCE = "git+https://github.com/Vandarkun/ProjectEvolution"
+GIT_SOURCE_WITH_EXTRAS = "project-evolution[retrieval]@" + GIT_SOURCE
 
 AGENTS_MD_MARKER = "<!-- PEL:BEGIN -->"
 AGENTS_MD_SECTION = """\
@@ -73,7 +75,11 @@ def _server_command(project: Path | None, server_command: str | None) -> list[st
     if server_command:
         parts = server_command.split()
     else:
-        parts = ["uvx", "--from", GIT_SOURCE, "pel", "mcp", "serve"]
+        parts = [
+            "uvx", "--from", GIT_SOURCE_WITH_EXTRAS, "pel", "mcp", "serve",
+            # 默认走 DeepSeek（phase-09 验证过的组合）；--server-command 可整体覆盖
+            "--provider", "openai", "--base-url", "https://api.deepseek.com",
+        ]
     if project is not None and "--project" not in parts:
         parts += ["--project", str(project.resolve())]
     return parts
@@ -112,6 +118,37 @@ def _write_agents_md(project: Path) -> bool:
     return True
 
 
+def _write_analyzer_config(project: Path, api_key_env: str) -> bool:
+    """.project-evolution/config.yaml：只填缺失的分析器键（已配置的不动）。
+
+    没有 analyzer_api_key_env 时，serve 进程不会去读任何环境变量里的 key
+    ——401 的根因（e2e 实测发现），所以这一步是开箱可用的必要条件。
+    """
+    import yaml
+
+    path = project / ".project-evolution" / "config.yaml"
+    data: dict = {}
+    if path.is_file():
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except Exception as exc:  # noqa: BLE001 - 用户配置损坏时明确报错
+            raise ScaffoldError(f"cannot parse existing config {path}: {exc}") from exc
+    changed = False
+    for key, value in (
+        ("analyzer_model", "deepseek-chat"),
+        ("analyzer_api_key_env", api_key_env),
+    ):
+        if data.get(key) in (None, ""):
+            data[key] = value
+            changed = True
+    if changed:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            yaml.safe_dump(data, allow_unicode=True, sort_keys=True), encoding="utf-8"
+        )
+    return changed
+
+
 def _require_uv() -> None:
     if shutil.which("uv") is None and shutil.which("uvx") is None:
         raise ScaffoldError(
@@ -141,10 +178,15 @@ def init_zcode(project: Path, server_command: str | None) -> ScaffoldResult:
         result.written.append(".zcode/config.json")
     else:
         result.skipped.append(".zcode/config.json (unchanged)")
+    if _write_analyzer_config(project, "DEEPSEEK_API_KEY"):
+        result.written.append(".project-evolution/config.yaml")
+    else:
+        result.skipped.append(".project-evolution/config.yaml (configured)")
     if _write_agents_md(project):
         result.written.append("AGENTS.md")
     else:
         result.skipped.append("AGENTS.md (already has PEL rules)")
+    result.notes.append("export DEEPSEEK_API_KEY=<你的 key> 后语义分析即生效")
     result.notes.append("重启 ZCode 会话后 MCP 自动连接")
     return result
 
@@ -184,10 +226,15 @@ def init_codex(project: Path, server_command: str | None) -> ScaffoldResult:
         result.written.append(str(config))
     else:
         result.skipped.append(f"{config} (unchanged)")
+    if _write_analyzer_config(project, "DEEPSEEK_API_KEY"):
+        result.written.append(".project-evolution/config.yaml")
+    else:
+        result.skipped.append(".project-evolution/config.yaml (configured)")
     if _write_agents_md(project):
         result.written.append("AGENTS.md")
     else:
         result.skipped.append("AGENTS.md (already has PEL rules)")
+    result.notes.append("export DEEPSEEK_API_KEY=<你的 key> 后语义分析即生效")
     result.notes.append("Codex 原生读取项目 AGENTS.md；多项目共用此全局服务器")
     return result
 
@@ -274,10 +321,15 @@ def init_dsh(project: Path, server_command: str | None) -> ScaffoldResult:
         result.written.append(str(config))
     else:
         result.skipped.append(f"{config} (unchanged)")
+    if _write_analyzer_config(project, "DEEPSEEK_API_KEY"):
+        result.written.append(".project-evolution/config.yaml")
+    else:
+        result.skipped.append(".project-evolution/config.yaml (configured)")
     if _write_agents_md(project):
         result.written.append("AGENTS.md")
     else:
         result.skipped.append("AGENTS.md (already has PEL rules)")
+    result.notes.append("export DEEPSEEK_API_KEY=<你的 key> 后语义分析即生效")
     result.notes.append(
         "dsh 为 developer preview，配置格式可能随版本变化；工具将以 "
         "mcp__pel__* 形式出现；按工作区隔离可用官方 dsh-workspace-mcp 插件"

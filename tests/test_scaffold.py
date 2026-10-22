@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from project_evolution.scaffold import (
-    GIT_SOURCE,
+    GIT_SOURCE_WITH_EXTRAS,
     ScaffoldError,
     run_init,
 )
@@ -31,7 +31,10 @@ def with_uv(monkeypatch):
 
 
 def _uvx_cmd(project: Path | None) -> dict:
-    args = ["--from", GIT_SOURCE, "pel", "mcp", "serve"]
+    args = [
+        "--from", GIT_SOURCE_WITH_EXTRAS, "pel", "mcp", "serve",
+        "--provider", "openai", "--base-url", "https://api.deepseek.com",
+    ]
     if project is not None:
         args += ["--project", str(project.resolve())]
     return {"command": "uvx", "args": args}
@@ -48,7 +51,7 @@ def test_zcode_workspace_config(home: Path, tmp_path: Path, with_uv) -> None:
 
     # 幂等：重跑无变更
     again = run_init("zcode", project, None)
-    assert not again.written and len(again.skipped) == 2
+    assert not again.written and len(again.skipped) == 3
 
     # 合并：不覆盖用户已有键
     (project / ".zcode" / "config.json").write_text(
@@ -150,3 +153,24 @@ def test_dsh_home_env(home: Path, tmp_path: Path, with_uv, monkeypatch) -> None:
     project.mkdir()
     run_init("deepseek-harness", project, None)  # 别名同 dsh
     assert (custom / "cordis.yml").is_file()
+
+
+def test_analyzer_config_fill_only_missing(home: Path, tmp_path: Path, with_uv) -> None:
+    """config.yaml 只填缺失键：用户已配置的模型不被覆盖。"""
+    import yaml
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    run_init("zcode", project, None)
+    cfg = yaml.safe_load((project / ".project-evolution" / "config.yaml").read_text("utf-8"))
+    assert cfg["analyzer_model"] == "deepseek-chat"
+    assert cfg["analyzer_api_key_env"] == "DEEPSEEK_API_KEY"
+
+    # 用户改用自己的模型后重跑：不覆盖
+    (project / ".project-evolution" / "config.yaml").write_text(
+        "analyzer_model: my-model\nanalyzer_api_key_env: MY_KEY\n", encoding="utf-8"
+    )
+    result = run_init("zcode", project, None)
+    assert ".project-evolution/config.yaml (configured)" in result.skipped
+    cfg = yaml.safe_load((project / ".project-evolution" / "config.yaml").read_text("utf-8"))
+    assert cfg["analyzer_model"] == "my-model"
