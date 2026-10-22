@@ -14,13 +14,17 @@ harness 扩展机制参考：
 
 - zcode     workspace ``.zcode/config.json`` → ``mcp.servers``（自动连接）
 - codex     用户级 ``~/.codex/config.toml`` → ``[mcp_servers.pel]``
-- deepcode  用户级 ``~/.deepcode/settings.json`` → ``mcpServers``
-            （Deep Code / ds harness；同时读项目 AGENTS.md 与 .agents/skills）
+- dsh       DeepSeek Harness（deepseek-ai/deepseek-harness）：用户级
+            ``$DSH_HOME/cordis.yml``（默认 ``~/.dsh``）追加
+            ``@deepseek-ai/dsh-mcp-client`` 插件条目；项目 AGENTS.md 生态原生
+- deepcode  deepcode-cli（另一个工具，勿与 dsh 混淆）：用户级
+            ``~/.deepcode/settings.json`` → ``mcpServers``
 """
 
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -217,10 +221,105 @@ def init_deepcode(project: Path, server_command: str | None) -> ScaffoldResult:
     return result
 
 
+def _dsh_home() -> Path:
+    """dsh harness 主目录：$DSH_HOME 优先，默认 ~/.dsh（官方 config-catalog）。"""
+    env = os.environ.get("DSH_HOME")
+    return Path(env) if env else Path.home() / ".dsh"
+
+
+def _upsert_dsh_plugin(config_text: str, entry_lines: list[str]) -> str:
+    """在 cordis.yml 中幂等插入/替换 pel 插件条目（保留其余内容）。
+
+    dsh 处于 developer preview，官方未承诺稳定的跨版本配置文件格式，
+    这里做保守的文本级 upsert：已有 ``id: pel`` 块则整块替换；否则挂到
+    ``plugins:`` 键下（无该键则补一个）。
+    """
+    lines = config_text.splitlines()
+    out: list[str] = []
+    i = 0
+    replaced = False
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+        if stripped.startswith("- id:") and "pel" in stripped.split("id:", 1)[1].strip():
+            # 跳过旧 pel 块：直到下一个顶层键或同级列表项
+            i += 1
+            while i < len(lines):
+                nxt = lines[i]
+                s = nxt.strip()
+                if s.startswith("- ") or (nxt and not nxt[0].isspace()):
+                    break
+                i += 1
+            out.extend(entry_lines)
+            replaced = True
+            continue
+        out.append(line)
+        i += 1
+    text = "\n".join(out)
+    if replaced:
+        return text.rstrip("\n") + "\n" if text else ""
+
+    indented = [f"  {line}" for line in entry_lines]
+    if any(line.strip() == "plugins:" for line in lines):
+        # 挂到现有 plugins: 键末尾（该键的最后一个子项之后）
+        result: list[str] = []
+        idx = next(
+            k for k, line in enumerate(lines) if line.strip() == "plugins:"
+        )
+        j = idx + 1
+        while j < len(lines) and (not lines[j] or lines[j][0].isspace()):
+            j += 1
+        result = lines[:j] + indented + lines[j:]
+        return "\n".join(result).rstrip("\n") + "\n"
+    if lines and lines[0].startswith("- "):
+        # 整个文件就是一个插件列表
+        return "\n".join(lines + entry_lines).rstrip("\n") + "\n"
+    if not text.strip():
+        return "plugins:\n" + "\n".join(indented) + "\n"
+    return text.rstrip("\n") + "\n\nplugins:\n" + "\n".join(indented) + "\n"
+
+
+def init_dsh(project: Path, server_command: str | None) -> ScaffoldResult:
+    """dsh（DeepSeek Harness）：~/.dsh/cordis.yml 追加 dsh-mcp-client 插件条目。"""
+    _require_uv()
+    result = ScaffoldResult("dsh")
+    cmd = _server_command(None, server_command)  # 全局条目：cwd 自动解析项目
+    config = _dsh_home() / "cordis.yml"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    args_yaml = ", ".join(json.dumps(a) for a in cmd[1:])
+    entry_lines = [
+        "- id: pel",
+        "  name: '@deepseek-ai/dsh-mcp-client'",
+        "  config:",
+        "    serverName: pel",
+        "    transport: stdio",
+        f"    command: {json.dumps(cmd[0])}",
+        f"    args: [{args_yaml}]",
+    ]
+    old = config.read_text(encoding="utf-8") if config.is_file() else ""
+    new = _upsert_dsh_plugin(old, entry_lines)
+    if new != old:
+        config.write_text(new, encoding="utf-8")
+        result.written.append(str(config))
+    else:
+        result.skipped.append(f"{config} (unchanged)")
+    if _write_agents_md(project):
+        result.written.append("AGENTS.md")
+    else:
+        result.skipped.append("AGENTS.md (already has PEL rules)")
+    result.notes.append(
+        "dsh 为 developer preview，配置格式可能随版本变化；工具将以 "
+        "mcp__pel__* 形式出现；按工作区隔离可用官方 dsh-workspace-mcp 插件"
+    )
+    return result
+
+
 HARNESSES = {
     "zcode": init_zcode,
     "codex": init_codex,
     "deepcode": init_deepcode,
+    "dsh": init_dsh,
+    "deepseek-harness": init_dsh,
 }
 
 

@@ -118,3 +118,54 @@ def test_server_command_override(home: Path, tmp_path: Path, with_uv) -> None:
     entry = cfg["mcp"]["servers"]["pel"]
     assert entry["command"] == "C:/tools/pel.exe"
     assert entry["args"][-1] == "."  # 覆盖命令时 --project 不强插
+
+
+def test_dsh_cordis_yml(home: Path, tmp_path: Path, with_uv, monkeypatch) -> None:
+    """dsh（DeepSeek Harness）：cordis.yml 插件条目三种形态 + 幂等。"""
+    dsh_home = home / ".dsh"
+    monkeypatch.delenv("DSH_HOME", raising=False)
+    project = tmp_path / "proj"
+    project.mkdir()
+
+    # 1) 全新安装
+    run_init("dsh", project, None)
+    cfg = dsh_home / "cordis.yml"
+    text = cfg.read_text(encoding="utf-8")
+    assert "plugins:" in text and "- id: pel" in text
+    assert "'@deepseek-ai/dsh-mcp-client'" in text and "command:" in text
+    assert (project / "AGENTS.md").is_file()
+
+    # 2) 幂等：重跑不重复
+    run_init("dsh", project, None)
+    assert cfg.read_text(encoding="utf-8").count("- id: pel") == 1
+
+    # 3) 已有其他插件：保留，pel 挂在同一 plugins: 键下
+    cfg.write_text(
+        "plugins:\n"
+        "  - id: other\n"
+        "    name: '@deepseek-ai/dsh-mcp-client'\n"
+        "    config:\n"
+        "      serverName: other\n",
+        encoding="utf-8",
+    )
+    run_init("dsh", project, None)
+    text = cfg.read_text(encoding="utf-8")
+    assert "- id: other" in text and "- id: pel" in text
+
+    # 4) 整文件即插件列表（裸列表形态）
+    cfg.write_text(
+        "- id: first\n  name: x\n", encoding="utf-8"
+    )
+    run_init("dsh", project, None)
+    text = cfg.read_text(encoding="utf-8")
+    assert "- id: first" in text and "- id: pel" in text
+
+
+def test_dsh_home_env(home: Path, tmp_path: Path, with_uv, monkeypatch) -> None:
+    """DSH_HOME 环境变量优先于 ~/.dsh。"""
+    custom = tmp_path / "custom-dsh"
+    monkeypatch.setenv("DSH_HOME", str(custom))
+    project = tmp_path / "proj"
+    project.mkdir()
+    run_init("deepseek-harness", project, None)  # 别名同 dsh
+    assert (custom / "cordis.yml").is_file()

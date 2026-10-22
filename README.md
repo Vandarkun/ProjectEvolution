@@ -284,12 +284,15 @@ Do not call these tools every turn — only at the moments above.
   ```bash
   # zcode（workspace 配置，下个会话自动连接）
   uvx --from "git+https://github.com/Vandarkun/ProjectEvolution" pel init --agent zcode
-  # codex（~/.codex/config.toml） / deepcode（ds harness，~/.deepcode/settings.json）
+  # codex（~/.codex/config.toml）
   uvx --from "git+https://github.com/Vandarkun/ProjectEvolution" pel init --agent codex
+  # dsh = DeepSeek Harness（deepseek-ai/deepseek-harness，~/.dsh/cordis.yml 插件条目）
+  uvx --from "git+https://github.com/Vandarkun/ProjectEvolution" pel init --agent dsh
+  # deepcode-cli（另一个工具，勿与 dsh 混淆）
   uvx --from "git+https://github.com/Vandarkun/ProjectEvolution" pel init --agent deepcode
   ```
   幂等合并（不覆盖既有配置），同时生成项目 AGENTS.md 记录规则；生成的
   MCP 服务器命令同为 uvx 直装源形式，换机器不依赖本地路径。国内网络可加
-  `UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple`。已支持 harness 的
-  扩展机制：zcode `.zcode/config.json`、codex `[mcp_servers]` TOML、
-  deepcode `mcpServers` JSON。
+  `UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple`。已支持 harness 的扩展机制：zcode `.zcode/config.json`、codex `[mcp_servers]` TOML、
+  dsh（DeepSeek Harness）`cordis.yml` 的 dsh-mcp-client 插件条目、
+  deepcode `mcpServers` JSON。dsh 处于 developer preview，配置格式可能随版本变化。
