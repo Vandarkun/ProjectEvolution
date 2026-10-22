@@ -1,0 +1,15 @@
+{
+  "mcp": {
+    "servers": {
+      "pel": {
+        "command": "C:\\Users\\Administrator\\Desktop\\mycode\\ProjectEvolution\\.venv\\Scripts\\pel.exe",
+        "args": [
+          "mcp",
+          "serve",
+          "--project",
+          "C:\\Users\\Administrator\\Desktop\\mycode\\ProjectEvolution"
+        ]
+      }
+    }
+  }
+}
