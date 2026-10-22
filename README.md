@@ -280,3 +280,16 @@ Do not call these tools every turn — only at the moments above.
   事件、反之亦然（phase-09 实测的精确匹配盲区）。铁律不变：向量只返回
   事件引用（ID + 分数），事实与证据仍由账本/投影按键提供；向量表是可丢弃
   的派生层（随投影重建自动重嵌，换模型自动清旧向量）。
+- **一行命令接入 Coding Agent**（无需克隆仓库，`pel init`）：
+  ```bash
+  # zcode（workspace 配置，下个会话自动连接）
+  uvx --from "git+https://github.com/Vandarkun/ProjectEvolution" pel init --agent zcode
+  # codex（~/.codex/config.toml） / deepcode（ds harness，~/.deepcode/settings.json）
+  uvx --from "git+https://github.com/Vandarkun/ProjectEvolution" pel init --agent codex
+  uvx --from "git+https://github.com/Vandarkun/ProjectEvolution" pel init --agent deepcode
+  ```
+  幂等合并（不覆盖既有配置），同时生成项目 AGENTS.md 记录规则；生成的
+  MCP 服务器命令同为 uvx 直装源形式，换机器不依赖本地路径。国内网络可加
+  `UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple`。已支持 harness 的
+  扩展机制：zcode `.zcode/config.json`、codex `[mcp_servers]` TOML、
+  deepcode `mcpServers` JSON。
