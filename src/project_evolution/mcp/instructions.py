@@ -17,6 +17,8 @@ This project uses the Project Evolution Ledger (PEL) MCP tools.
 - Call `complete_task` when the task is finished.
 - Call `get_history` / `get_project_state` when you need past designs,
   parameters, decisions, or bug fixes.
+- Call `search_events` when you don't know the exact parameter/decision name —
+  it matches by meaning across Chinese and English.
 - Never edit files under `.project-evolution/events` by hand.
 
 Do not call these tools every turn — only at the moments above.

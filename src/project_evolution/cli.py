@@ -617,13 +617,23 @@ def _search(args: argparse.Namespace) -> int:
     """``pel search``：语义召回事件引用（向量只定位，事实按 ID 下钻）。"""
     import json as _json
 
-    from project_evolution.index import QueryService
+    from project_evolution.errors import PelError
+    from project_evolution.index import ProjectionNotBuiltError, QueryService
     from project_evolution.retrieval.embedder import RetrievalError
 
     service = QueryService(args.project)
     try:
         hits = service.search_events(args.query, limit=max(1, args.limit))
     except RetrievalError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    except ProjectionNotBuiltError:
+        print(
+            "error: projection not built yet; run `pel index rebuild` first",
+            file=sys.stderr,
+        )
+        return 2
+    except PelError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     if args.as_json:

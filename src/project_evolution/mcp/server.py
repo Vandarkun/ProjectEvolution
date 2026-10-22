@@ -53,7 +53,8 @@ INSTRUCTIONS = (
     "Project Evolution Ledger: call start_task when beginning a well-defined task; "
     "checkpoint_task at subgoal completion, design changes, or before context "
     "compaction; complete_task when done; get_history / get_project_state to recall "
-    "past decisions, parameters and bugs. Do not call tools every turn."
+    "past decisions, parameters and bugs; search_events for semantic recall when "
+    "you don't know exact names (cross-language). Do not call tools every turn."
 )
 
 
