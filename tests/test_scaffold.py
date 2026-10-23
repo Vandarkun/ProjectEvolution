@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from project_evolution.scaffold import (
-    GIT_SOURCE_WITH_EXTRAS,
+    GIT_SOURCE,
     ScaffoldError,
     run_init,
 )
@@ -31,10 +31,8 @@ def with_uv(monkeypatch):
 
 
 def _uvx_cmd(project: Path | None) -> dict:
-    args = [
-        "--from", GIT_SOURCE_WITH_EXTRAS, "pel", "mcp", "serve",
-        "--provider", "openai", "--base-url", "https://api.deepseek.com",
-    ]
+    # 零参数启动：provider/base_url/key 全在项目 config.yaml
+    args = ["--from", GIT_SOURCE, "pel", "mcp", "serve"]
     if project is not None:
         args += ["--project", str(project.resolve())]
     return {"command": "uvx", "args": args}
@@ -166,11 +164,41 @@ def test_analyzer_config_fill_only_missing(home: Path, tmp_path: Path, with_uv) 
     assert cfg["analyzer_model"] == "deepseek-chat"
     assert cfg["analyzer_api_key_env"] == "DEEPSEEK_API_KEY"
 
-    # 用户改用自己的模型后重跑：不覆盖
+    # 用户改用自己的接线后重跑：既有选择不被覆盖（缺失键允许补齐）
     (project / ".project-evolution" / "config.yaml").write_text(
-        "analyzer_model: my-model\nanalyzer_api_key_env: MY_KEY\n", encoding="utf-8"
+        "analyzer_provider: ollama\nanalyzer_model: my-model\n"
+        "analyzer_base_url: http://localhost:11434\n"
+        "analyzer_api_key_env: MY_KEY\n",
+        encoding="utf-8",
     )
     result = run_init("zcode", project, None)
     assert ".project-evolution/config.yaml (configured)" in result.skipped
     cfg = yaml.safe_load((project / ".project-evolution" / "config.yaml").read_text("utf-8"))
     assert cfg["analyzer_model"] == "my-model"
+
+
+def test_example_template_and_gitignore(home: Path, tmp_path: Path, with_uv) -> None:
+    """真实 config 不入库、example 模板可入库的 gitignore 策略。"""
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / ".gitignore").write_text(".project-evolution/\n", encoding="utf-8")
+
+    run_init("zcode", project, None)
+
+    gi_lines = [
+        ln.strip() for ln in (project / ".gitignore").read_text(encoding="utf-8").splitlines()
+    ]
+    # 旧的整目录排除行必须被替换成「排内容 + 保留模板」的写法
+    assert ".project-evolution/" not in gi_lines
+    assert ".project-evolution/*" in gi_lines
+    assert "!.project-evolution/config.yaml.example" in gi_lines
+
+    example = project / ".project-evolution" / "config.yaml.example"
+    assert example.is_file() and "sk-xxxxxxxx" in example.read_text(encoding="utf-8")
+    import yaml
+
+    cfg = yaml.safe_load(
+        (project / ".project-evolution" / "config.yaml").read_text(encoding="utf-8")
+    )
+    assert cfg["analyzer_provider"] == "openai"
+    assert cfg["analyzer_base_url"] == "https://api.deepseek.com"

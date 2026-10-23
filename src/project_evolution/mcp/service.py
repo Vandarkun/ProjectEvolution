@@ -55,12 +55,12 @@ _HISTORY_KINDS = ("task", "parameter", "feature", "decision", "bug", "file", "ve
 
 
 class ProviderSpec:
-    """Provider 选择参数（mock 默认；openai/ollama 需显式 model）。"""
+    """Provider 覆盖参数（全部可空：缺省回退项目 config.yaml，再缺省 mock）。"""
 
     def __init__(
         self,
         *,
-        provider: str = "mock",
+        provider: str | None = None,
         model: str | None = None,
         base_url: str | None = None,
         api_key_env: str | None = None,
@@ -69,6 +69,12 @@ class ProviderSpec:
         self.model = model
         self.base_url = base_url
         self.api_key_env = api_key_env
+
+
+def _env_get(name: str) -> str | None:
+    import os
+
+    return os.environ.get(name)
 
 
 def build_provider(spec: ProviderSpec, config: PelConfig):
@@ -80,23 +86,25 @@ def build_provider(spec: ProviderSpec, config: PelConfig):
     )
 
     model = spec.model or config.analyzer_model
-    if spec.provider == "mock":
+    provider = spec.provider or config.analyzer_provider or "mock"
+    if provider == "mock":
         return MockProvider()
-    if spec.provider == "openai":
+    if provider == "openai":
         if not model:
             raise ToolError(
                 INVALID_ARGUMENT,
                 "openai provider requires --model or config analyzer_model",
             )
-        import os
-
         env_name = spec.api_key_env or config.analyzer_api_key_env
+        api_key = config.analyzer_api_key_resolved
+        if env_name and not config.analyzer_api_key:
+            api_key = api_key or _env_get(env_name)
         return OpenAICompatibleProvider(
             model=model,
-            base_url=spec.base_url or "https://api.openai.com/v1",
-            api_key=os.environ.get(env_name) if env_name else None,
+            base_url=spec.base_url or config.analyzer_base_url or "https://api.openai.com/v1",
+            api_key=api_key,
         )
-    if spec.provider == "ollama":
+    if provider == "ollama":
         if not model:
             raise ToolError(
                 INVALID_ARGUMENT,
@@ -105,7 +113,7 @@ def build_provider(spec: ProviderSpec, config: PelConfig):
         return OllamaProvider(
             model=model, base_url=spec.base_url or "http://localhost:11434"
         )
-    raise ToolError(INVALID_ARGUMENT, f"unknown provider: {spec.provider!r}")
+    raise ToolError(INVALID_ARGUMENT, f"unknown provider: {provider!r}")
 
 
 class ProjectRuntime:

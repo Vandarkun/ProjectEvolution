@@ -164,7 +164,7 @@ def test_missing_dependency_raises_retrieval_error(vec_repo: Path, monkeypatch) 
     embedder = default_embedder()
     with pytest.raises(RetrievalError) as excinfo:
         embedder.embed(["x"])
-    assert "retrieval" in str(excinfo.value)
+    assert "pip install project-evolution" in str(excinfo.value)
 
 
 def test_index_level_determinism() -> None:

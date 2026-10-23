@@ -17,7 +17,7 @@ def test_defaults_when_no_config_file(tmp_path: Path) -> None:
     assert config.runtime_dir == ".runtime"
     assert config.analyzer_model is None
     assert config.analyzer_api_key_env is None
-    assert config.analyzer_api_key is None
+    assert config.analyzer_api_key_resolved is None
 
 
 def test_yaml_override(tmp_path: Path) -> None:
@@ -78,9 +78,10 @@ def test_invalid_value_type_raises_config_error(tmp_path: Path) -> None:
         load_config(tmp_path)
 
 
-def test_api_key_resolved_from_env_but_never_dumped(
+def test_api_key_env_reference_resolution(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """key 引用环境变量名：可解析；明文 key（若配置）优先于环境变量。"""
     secret = "sk-super-secret-value"
     monkeypatch.setenv("PEL_TEST_KEY", secret)
     pel_dir = tmp_path / ".project-evolution"
@@ -90,14 +91,19 @@ def test_api_key_resolved_from_env_but_never_dumped(
     )
 
     config = load_config(tmp_path)
-    # 可通过环境变量解析
-    assert config.analyzer_api_key == secret
-    # 但配置文件与 dump 输出只包含环境变量名，永不包含明文
-    assert "PEL_TEST_KEY" in (pel_dir / "config.yaml").read_text(encoding="utf-8")
-    dumped = config.model_dump_json()
-    assert "PEL_TEST_KEY" in dumped
-    assert secret not in dumped
-    assert secret not in str(config)
+    # 通过环境变量名解析
+    assert config.analyzer_api_key_resolved == secret
+
+    # 明文 key 优先于环境变量（2026-10 新约定：文件为主，env 后备）
+    (pel_dir / "config.yaml").write_text(
+        "analyzer_api_key: sk-inline-wins\nanalyzer_api_key_env: PEL_TEST_KEY\n",
+        encoding="utf-8",
+    )
+    config = load_config(tmp_path)
+    assert config.analyzer_api_key_resolved == "sk-inline-wins"
+
+    # 真实 config 不入库的约定由 gitignore 保障（见 test_scaffold）
+    assert "sk-inline-wins" in (pel_dir / "config.yaml").read_text(encoding="utf-8")
 
 
 def test_api_key_none_when_env_missing(
@@ -110,4 +116,4 @@ def test_api_key_none_when_env_missing(
         "analyzer_api_key_env: PEL_MISSING_KEY\n", encoding="utf-8"
     )
     config = load_config(tmp_path)
-    assert config.analyzer_api_key is None
+    assert config.analyzer_api_key_resolved is None

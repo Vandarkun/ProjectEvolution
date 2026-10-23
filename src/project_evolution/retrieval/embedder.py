@@ -117,8 +117,7 @@ class FastEmbedEmbedder:
             from fastembed import TextEmbedding
         except ImportError as exc:  # pragma: no cover - 依赖缺失路径
             raise RetrievalError(
-                "fastembed is not installed; "
-                "install with: pip install project-evolution[retrieval]"
+                "fastembed is not installed; install with: pip install project-evolution"
             ) from exc
         try:
             self._model = TextEmbedding(model_name=self._model_name)

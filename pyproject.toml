@@ -12,15 +12,13 @@ license = { text = "MIT" }
 dependencies = [
     "pydantic>=2.5",
     "PyYAML>=6.0",
+    "fastembed>=0.3",
 ]
 
 [project.optional-dependencies]
 dashboard = [
     "fastapi>=0.110",
     "uvicorn>=0.27",
-]
-retrieval = [
-    "fastembed>=0.3",
 ]
 dev = [
     "pytest>=7",

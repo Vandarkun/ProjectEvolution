@@ -220,8 +220,8 @@ def _add_provider_args(
     parser.add_argument(
         "--provider",
         choices=["mock", "openai", "ollama"],
-        default="mock",
-        help="evolution model provider (default: mock)",
+        default=None,
+        help="evolution model provider (default: config analyzer_provider, else mock)",
     )
     parser.add_argument("--model", help="model name (default: config analyzer_model)")
     parser.add_argument("--base-url", help="provider base URL")
@@ -365,9 +365,10 @@ def _build_provider(args: argparse.Namespace):
 
     config = load_config(args.project)
     model = args.model or config.analyzer_model
-    if args.provider == "mock":
+    provider = args.provider or config.analyzer_provider or "mock"
+    if provider == "mock":
         return MockProvider()
-    if args.provider == "openai":
+    if provider == "openai":
         if not model:
             print(
                 "error: --model (or config analyzer_model) is required for openai provider",
@@ -375,21 +376,28 @@ def _build_provider(args: argparse.Namespace):
             )
             return None
         env_name = args.api_key_env or config.analyzer_api_key_env
-        api_key = os.environ.get(env_name) if env_name else None
+        # 明文 key（config.analyzer_api_key）优先；否则按环境变量名读取
+        api_key = config.analyzer_api_key_resolved
+        if env_name and not config.analyzer_api_key:
+            api_key = api_key or os.environ.get(env_name)
         return OpenAICompatibleProvider(
             model=model,
-            base_url=args.base_url or "https://api.openai.com/v1",
+            base_url=args.base_url or config.analyzer_base_url or "https://api.openai.com/v1",
             api_key=api_key,
         )
-    if not model:
-        print(
-            "error: --model (or config analyzer_model) is required for ollama provider",
-            file=sys.stderr,
+    if provider == "ollama":
+        if not model:
+            print(
+                "error: --model (or config analyzer_model) is required for ollama provider",
+                file=sys.stderr,
+            )
+            return None
+        return OllamaProvider(
+            model=model, base_url=args.base_url or "http://localhost:11434"
         )
-        return None
-    return OllamaProvider(
-        model=model, base_url=args.base_url or "http://localhost:11434"
-    )
+    print(f"error: unknown provider: {provider!r}", file=sys.stderr)
+    return None
+
 
 
 def _analyze(args: argparse.Namespace) -> int:

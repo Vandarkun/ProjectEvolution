@@ -29,10 +29,8 @@ from pathlib import Path
 
 from project_evolution.errors import PelError
 
-#: uvx 直装源（不克隆仓库的一行命令体验）。
-#: 服务器命令带 [retrieval] extra——否则 search_events 报缺依赖。
+#: uvx 直装源（不克隆仓库的一行命令体验）；fastembed 已是核心依赖
 GIT_SOURCE = "git+https://github.com/Vandarkun/ProjectEvolution"
-GIT_SOURCE_WITH_EXTRAS = "project-evolution[retrieval]@" + GIT_SOURCE
 
 AGENTS_MD_MARKER = "<!-- PEL:BEGIN -->"
 AGENTS_MD_SECTION = """\
@@ -75,11 +73,9 @@ def _server_command(project: Path | None, server_command: str | None) -> list[st
     if server_command:
         parts = server_command.split()
     else:
-        parts = [
-            "uvx", "--from", GIT_SOURCE_WITH_EXTRAS, "pel", "mcp", "serve",
-            # 默认走 DeepSeek（phase-09 验证过的组合）；--server-command 可整体覆盖
-            "--provider", "openai", "--base-url", "https://api.deepseek.com",
-        ]
+        # provider/base_url/key 全部来自项目 config.yaml（零参数启动）；
+        # --server-command 可整体覆盖
+        parts = ["uvx", "--from", GIT_SOURCE, "pel", "mcp", "serve"]
     if project is not None and "--project" not in parts:
         parts += ["--project", str(project.resolve())]
     return parts
@@ -118,15 +114,32 @@ def _write_agents_md(project: Path) -> bool:
     return True
 
 
+CONFIG_EXAMPLE = """# PEL 分析器接线示例（复制为 config.yaml 并填入真实值；真配置不入库）
+analyzer_provider: openai          # mock | openai | ollama
+analyzer_model: deepseek-chat
+analyzer_base_url: https://api.deepseek.com
+# key 二选一：明文（方便，本文件已被 gitignore）或引用环境变量名
+analyzer_api_key: sk-xxxxxxxxxxxxxxxx
+# analyzer_api_key_env: DEEPSEEK_API_KEY
+"""
+
+
 def _write_analyzer_config(project: Path, api_key_env: str) -> bool:
     """.project-evolution/config.yaml：只填缺失的分析器键（已配置的不动）。
 
-    没有 analyzer_api_key_env 时，serve 进程不会去读任何环境变量里的 key
-    ——401 的根因（e2e 实测发现），所以这一步是开箱可用的必要条件。
+    接线全部落在文件里（provider/model/base_url/key 环境变量名），
+    启动命令零参数；e2e 实测无此文件时 serve 不读任何 env 里的 key（401）。
+    同时生成 config.yaml.example 模板并设置 gitignore：真实配置不入库。
     """
     import yaml
 
-    path = project / ".project-evolution" / "config.yaml"
+    base = project / ".project-evolution"
+    base.mkdir(parents=True, exist_ok=True)
+    path = base / "config.yaml"
+    example = base / "config.yaml.example"
+    if not example.is_file():
+        example.write_text(CONFIG_EXAMPLE, encoding="utf-8")
+
     data: dict = {}
     if path.is_file():
         try:
@@ -135,18 +148,43 @@ def _write_analyzer_config(project: Path, api_key_env: str) -> bool:
             raise ScaffoldError(f"cannot parse existing config {path}: {exc}") from exc
     changed = False
     for key, value in (
+        ("analyzer_provider", "openai"),
         ("analyzer_model", "deepseek-chat"),
+        ("analyzer_base_url", "https://api.deepseek.com"),
         ("analyzer_api_key_env", api_key_env),
     ):
         if data.get(key) in (None, ""):
             data[key] = value
             changed = True
-    if changed:
-        path.parent.mkdir(parents=True, exist_ok=True)
+    if changed or not path.is_file():
         path.write_text(
             yaml.safe_dump(data, allow_unicode=True, sort_keys=True), encoding="utf-8"
         )
+    _write_gitignore(project)
     return changed
+
+
+def _write_gitignore(project: Path) -> None:
+    """忽略 .project-evolution/ 全部内容，但保留 example 模板可入库。
+
+    注意 git 的规则：目录被整体排除后 ``!`` 否定不生效，所以必须用
+    ``.project-evolution/*`` + 否定条目的写法；若项目已有整目录排除的
+    旧行，替换为新写法。
+    """
+    gi = project / ".gitignore"
+    lines = gi.read_text(encoding="utf-8").splitlines() if gi.is_file() else []
+    wanted = [
+        ".project-evolution/*",
+        "!.project-evolution/config.yaml.example",
+    ]
+    # 移除旧的整目录排除（会让否定失效）
+    lines = [ln for ln in lines if ln.strip() not in (".project-evolution/", ".project-evolution")]
+    if all(w in lines for w in wanted):
+        return
+    for w in wanted:
+        if w not in lines:
+            lines.append(w)
+    gi.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _require_uv() -> None:

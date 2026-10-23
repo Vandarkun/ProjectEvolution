@@ -1,7 +1,14 @@
 """配置加载：默认配置 + ``.project-evolution/config.yaml`` 覆盖。
 
-安全约定：API Key 只能通过环境变量引用（``analyzer_api_key_env`` 保存变量名），
-配置文件与 ``model_dump`` 输出永不包含明文 key。
+约定（2026-10 起以文件为主，环境变量只作后备）：
+
+- 分析器的全部接线（provider / model / base_url / key）都写在 config.yaml，
+  改配置不用动环境变量或启动命令；
+- key 有两种写法：``analyzer_api_key``（明文，方便）或
+  ``analyzer_api_key_env``（引用环境变量名，CI 友好）；两者都在时明文优先；
+- **含真实信息的 config.yaml 不入库**：``.gitignore`` 排除整个
+  ``.project-evolution/``，仓库里提交 ``config.yaml.example`` 模板
+  （``pel init`` 自动生成这两样）。
 """
 
 from __future__ import annotations
@@ -53,16 +60,22 @@ class PelConfig(BaseModel):
     #: PEL 数据目录下的子目录（相对 ``.project-evolution/``）
     events_dir: str = "events"
     runtime_dir: str = ".runtime"
-    #: Evolution Model 的模型名与 API Key 环境变量名（仅名字，永不保存明文）
+    #: Evolution Model 接线（provider: mock | openai | ollama）。
+    #: key 支持明文 analyzer_api_key（优先）或 analyzer_api_key_env 引用环境变量。
+    analyzer_provider: str | None = None
     analyzer_model: str | None = None
+    analyzer_base_url: str | None = None
+    analyzer_api_key: str | None = None
     analyzer_api_key_env: str | None = None
     change_digest: ChangeDigestConfig = Field(default_factory=ChangeDigestConfig)
     privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
     evidence: EvidenceConfig = Field(default_factory=EvidenceConfig)
 
     @property
-    def analyzer_api_key(self) -> str | None:
-        """从环境变量解析 API Key；未配置或变量不存在时返回 None。"""
+    def analyzer_api_key_resolved(self) -> str | None:
+        """解析 API Key：明文配置优先，其次按环境变量名读取。"""
+        if self.analyzer_api_key:
+            return self.analyzer_api_key
         if self.analyzer_api_key_env is None:
             return None
         return os.environ.get(self.analyzer_api_key_env)
