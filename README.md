@@ -274,7 +274,7 @@ Do not call these tools every turn — only at the moments above.
   模型输出缺 `events` 键被静默当 NOOP；digest 清单内 RAW 证据 id 被
   存在性校验误拒（三连漏检根因）。详见
   `project-evolution-ledger-docs/docs/06-validation/phase-09-validation-report.md`。
-- **语义向量检索**（retrieval extra，`pip install project-evolution[retrieval]`）：
+- **语义向量检索**（fastembed 为核心依赖，装包即用）：
   本地 ONNX 小模型（paraphrase-multilingual-MiniLM，中英双语均衡，真实语料 A/B 实测选定）为语义事件建立向量
   索引，`pel search` / MCP `search_events` 跨语言召回——中文查询可命中英文
   事件、反之亦然（phase-09 实测的精确匹配盲区）。铁律不变：向量只返回
@@ -294,3 +294,11 @@ Do not call these tools every turn — only at the moments above.
   `UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple`。已支持 harness 的扩展机制：zcode `.zcode/config.json`、codex `[mcp_servers]` TOML、
   dsh（DeepSeek Harness）`cordis.yml` 的 dsh-mcp-client 插件条目、
   dsh 处于 developer preview，配置格式可能随版本变化。
+
+- **文件优先的配置体系**（2026-10）：分析器接线全部在
+  `.project-evolution/config.yaml`——`analyzer_provider` / `analyzer_model` /
+  `analyzer_base_url` / `analyzer_api_key`（明文，优先）或
+  `analyzer_api_key_env`（环境变量名，后备）；CLI/MCP 的 provider 参数缺省
+  回退 config 再回退 mock，MCP 服务器命令零参数。含真实信息的 config.yaml
+  不入库（gitignore 排除 `.project-evolution/*`），仓库提交
+  `config.yaml.example` 模板——两者均由 `pel init` 自动生成。
