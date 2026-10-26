@@ -288,4 +288,11 @@ Do not call these tools every turn — only at the moments above.
   回退 config 再回退 mock，MCP 服务器命令零参数。含真实信息的
   `pel.config.yaml` 不入库（gitignore 按文件名精确排除），仓库提交
   `pel.config.yaml.example` 全量模板；旧位置 `.project-evolution/config.yaml`
-  仍兼容读取（新路径优先）。harness 接入脚手架（`pel init`）已移除，重新设计中。
+  仍兼容读取（新路径优先）。接入方式为 MCP 生态标准动作——在你的 Agent 客户端注册服务器条目：
+  ```json
+  { "mcpServers": { "pel": { "command": "pel",
+    "args": ["mcp", "serve", "--project", "/path/to/your/project"] } } }
+  ```
+  （各家字段名略有差异：zcode `.zcode/config.json` 的 `mcp.servers`、
+  codex `~/.codex/config.toml` 的 `[mcp_servers.pel]`；注册后 Agent 自动
+  获得 7 个工具与使用指引；CLI 通道对所有 shell Agent 零注册可用。）
