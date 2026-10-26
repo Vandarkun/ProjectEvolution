@@ -58,6 +58,20 @@ class EvidenceConfig(BaseModel):
     max_patch_bytes: int = 200_000
 
 
+class RetrievalConfig(BaseModel):
+    """向量检索（search_events / pel search）配置。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: 本地 embedding 模型（fastembed 支持列表内任意模型名；换模型后
+    #: 首次搜索自动重嵌全部事件）
+    model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+
+
+#: retrieval.model 的默认值与 embedder 保持单一来源
+RETRIEVAL_DEFAULT_MODEL = RetrievalConfig().model
+
+
 class PelConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -72,9 +86,12 @@ class PelConfig(BaseModel):
     analyzer_base_url: str | None = None
     analyzer_api_key: str | None = None
     analyzer_api_key_env: str | None = None
+    #: 模型调用超时（秒）；缺省用 Provider 内置默认（120s）
+    analyzer_timeout: float | None = None
     change_digest: ChangeDigestConfig = Field(default_factory=ChangeDigestConfig)
     privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
     evidence: EvidenceConfig = Field(default_factory=EvidenceConfig)
+    retrieval: RetrievalConfig = Field(default_factory=RetrievalConfig)
 
     @property
     def analyzer_api_key_resolved(self) -> str | None:

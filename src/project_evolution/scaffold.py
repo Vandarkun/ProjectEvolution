@@ -114,22 +114,60 @@ def _write_agents_md(project: Path) -> bool:
     return True
 
 
-CONFIG_EXAMPLE = """# PEL 分析器接线示例（复制为 pel.config.yaml 并填真实值；真配置不入库）
-analyzer_provider: openai          # mock | openai | ollama
+CONFIG_TEMPLATE = """# PEL 全量配置（pel.config.yaml）——所有可配置项都在这里。
+# 未写的键 = 使用内置默认值；改本文件即可，无需环境变量或启动参数。
+# 真实配置不入库（gitignore），仓库里保留本文件的 example 副本。
+
+# ---------- 语义分析（Evolution Analyzer）----------
+analyzer_provider: openai            # mock | openai | ollama
 analyzer_model: deepseek-chat
 analyzer_base_url: https://api.deepseek.com
-# key 二选一：明文（方便，本文件已被 gitignore）或引用环境变量名
-analyzer_api_key: sk-xxxxxxxxxxxxxxxx
-# analyzer_api_key_env: DEEPSEEK_API_KEY
+# key 二选一：明文优先；留空则读 analyzer_api_key_env 指向的环境变量
+analyzer_api_key: ""
+analyzer_api_key_env: DEEPSEEK_API_KEY
+# analyzer_timeout: 120             # 模型调用超时（秒），默认 120
+
+# ---------- 向量检索（search_events / pel search）----------
+retrieval:
+  # 本地 embedding 模型（fastembed 支持列表内任意名）；换名后首次搜索自动重嵌
+  model: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+
+# ---------- ChangeDigest 预算（送模型的变更摘要上限）----------
+change_digest:
+  max_files: 50                      # 最多携带的变更文件数
+  max_total_diff_chars: 40000        # diff 总字符预算
+
+# ---------- 隐私排除（命中模式的内容永不进模型/证据）----------
+# .project-evolution/ 为永久排除，不可关闭；此处只能追加
+privacy:
+  exclude:
+    - .env
+    - "*.pem"
+    - "*.key"
+
+# ---------- Evidence 预算（diff 补丁落盘）----------
+evidence:
+  commit_diffs: true                 # checkpoint 间的 git 提交也生成 diff 证据
+  max_patch_bytes: 200000
+
+# ---------- 数据目录（.project-evolution/ 内的子目录名）----------
+events_dir: events
+runtime_dir: .runtime
+# schema_version: 1                 # 配置格式版本，一般不动
 """
+
+#: example 里 key 用占位符提示"这里填明文"；真实配置留空走环境变量
+CONFIG_EXAMPLE = CONFIG_TEMPLATE.replace(
+    'analyzer_api_key: ""', "analyzer_api_key: sk-xxxxxxxxxxxxxxxx"
+)
 
 
 def _write_analyzer_config(project: Path, api_key_env: str) -> bool:
-    """项目根 ``pel.config.yaml``：与项目自身配置同级（只填缺失键）。
+    """项目根 ``pel.config.yaml``：写入**全量**配置（新文件）。
 
+    配置文件是操作面板不是说明书——所有可配置项一次摆全，改哪个一目了然。
+    已有文件只补缺失的分析器接线键（用户其余配置原样保留）；
     ``.project-evolution/`` 是纯生成事实目录，不放任何手编文件。
-    接线全部落在文件里（provider/model/base_url/key），启动命令零参数；
-    e2e 实测无此文件时 serve 不读任何 env 里的 key（401）。
     """
     import yaml
 
@@ -138,12 +176,22 @@ def _write_analyzer_config(project: Path, api_key_env: str) -> bool:
     if not example.is_file():
         example.write_text(CONFIG_EXAMPLE, encoding="utf-8")
 
+    if not path.is_file():
+        path.write_text(
+            CONFIG_TEMPLATE.replace(
+                "analyzer_api_key_env: DEEPSEEK_API_KEY",
+                f"analyzer_api_key_env: {api_key_env}",
+            ),
+            encoding="utf-8",
+        )
+        _write_gitignore(project)
+        return True
+
     data: dict = {}
-    if path.is_file():
-        try:
-            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        except Exception as exc:  # noqa: BLE001 - 用户配置损坏时明确报错
-            raise ScaffoldError(f"cannot parse existing config {path}: {exc}") from exc
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception as exc:  # noqa: BLE001 - 用户配置损坏时明确报错
+        raise ScaffoldError(f"cannot parse existing config {path}: {exc}") from exc
     changed = False
     for key, value in (
         ("analyzer_provider", "openai"),
@@ -154,7 +202,7 @@ def _write_analyzer_config(project: Path, api_key_env: str) -> bool:
         if data.get(key) in (None, ""):
             data[key] = value
             changed = True
-    if changed or not path.is_file():
+    if changed:
         path.write_text(
             yaml.safe_dump(data, allow_unicode=True, sort_keys=True), encoding="utf-8"
         )

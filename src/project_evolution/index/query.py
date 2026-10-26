@@ -1084,7 +1084,7 @@ class QueryService:
 
         if not query.strip():
             return []
-        embedder = _search_embedder()
+        embedder = _search_embedder(self._config)
         conn = self._connect()
         try:
             rows = list(
@@ -1136,11 +1136,14 @@ class SearchHit(BaseModel):
     evidence_ids: list[str] = Field(default_factory=list)
 
 
-def _search_embedder():
-    """查询侧默认向量源（独立函数便于测试 monkeypatch）。"""
-    from project_evolution.retrieval.embedder import default_embedder
+def _search_embedder(config=None):
+    """查询侧向量源（独立函数便于测试 monkeypatch）；模型名取项目配置。"""
+    from project_evolution.retrieval.embedder import FastEmbedEmbedder
 
-    return default_embedder()
+    model = None
+    if config is not None:
+        model = getattr(config.retrieval, "model", None)
+    return FastEmbedEmbedder(model) if model else FastEmbedEmbedder()
 
 
 #: 嵌入文本的防御性上限：语义事件本就短（百余字符），上限只为挡住

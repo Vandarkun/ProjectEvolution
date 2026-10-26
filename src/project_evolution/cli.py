@@ -384,6 +384,7 @@ def _build_provider(args: argparse.Namespace):
             model=model,
             base_url=args.base_url or config.analyzer_base_url or "https://api.openai.com/v1",
             api_key=api_key,
+            timeout=config.analyzer_timeout or 120.0,
         )
     if provider == "ollama":
         if not model:

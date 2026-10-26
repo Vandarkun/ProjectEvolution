@@ -111,7 +111,7 @@ def _query_with(repo: Path, embedder: Embedder) -> QueryService:
 
     service = QueryService(repo)
     original = query_mod._search_embedder
-    query_mod._search_embedder = lambda: embedder
+    query_mod._search_embedder = lambda config=None: embedder
     try:
         yield service
     finally:

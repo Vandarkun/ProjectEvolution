@@ -1,7 +1,40 @@
-# PEL 分析器接线示例（复制为 config.yaml 并填入真实值；真配置不入库）
-analyzer_provider: openai          # mock | openai | ollama
+# PEL 全量配置（pel.config.yaml）——所有可配置项都在这里。
+# 未写的键 = 使用内置默认值；改本文件即可，无需环境变量或启动参数。
+# 真实配置不入库（gitignore），仓库里保留本文件的 example 副本。
+
+# ---------- 语义分析（Evolution Analyzer）----------
+analyzer_provider: openai            # mock | openai | ollama
 analyzer_model: deepseek-chat
 analyzer_base_url: https://api.deepseek.com
-# key 二选一：明文（方便，本文件已被 gitignore）或引用环境变量名
+# key 二选一：明文优先；留空则读 analyzer_api_key_env 指向的环境变量
 analyzer_api_key: sk-xxxxxxxxxxxxxxxx
-# analyzer_api_key_env: DEEPSEEK_API_KEY
+analyzer_api_key_env: DEEPSEEK_API_KEY
+# analyzer_timeout: 120             # 模型调用超时（秒），默认 120
+
+# ---------- 向量检索（search_events / pel search）----------
+retrieval:
+  # 本地 embedding 模型（fastembed 支持列表内任意名）；换名后首次搜索自动重嵌
+  model: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+
+# ---------- ChangeDigest 预算（送模型的变更摘要上限）----------
+change_digest:
+  max_files: 50                      # 最多携带的变更文件数
+  max_total_diff_chars: 40000        # diff 总字符预算
+
+# ---------- 隐私排除（命中模式的内容永不进模型/证据）----------
+# .project-evolution/ 为永久排除，不可关闭；此处只能追加
+privacy:
+  exclude:
+    - .env
+    - "*.pem"
+    - "*.key"
+
+# ---------- Evidence 预算（diff 补丁落盘）----------
+evidence:
+  commit_diffs: true                 # checkpoint 间的 git 提交也生成 diff 证据
+  max_patch_bytes: 200000
+
+# ---------- 数据目录（.project-evolution/ 内的子目录名）----------
+events_dir: events
+runtime_dir: .runtime
+# schema_version: 1                 # 配置格式版本，一般不动
