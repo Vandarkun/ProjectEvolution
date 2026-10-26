@@ -1,298 +1,179 @@
 # Project Evolution Ledger (PEL)
 
-面向 Coding Agent 的项目工程演进记录系统。回答一个核心问题：
-**这个项目是怎样一步一步变成现在这样的？**
+给 Coding Agent 用的**项目工程演进账本**——回答一个 Git Log 和聊天记录都答不了的问题：
 
-当前实现（Phase 01 ~ Phase 09）：
+> **这个项目是怎么一步一步变成现在这样的？**
 
-- **领域模型库**（`project_evolution.models`）：Project / Session / Task /
-  TaskSessionLink / Checkpoint / RawEvent / Evidence / EvolutionEvent /
-  FeatureChange / ParameterChange / Decision / BugFix / Milestone / Version，
-  与设计文档 `02-data-model.md` 严格对齐；Task 状态机按固定转换表实现。
-- **统一 ID 生成器**（`project_evolution.ids`）：`new_id("TASK")` -> `TASK-<ULID>`，
-  前缀 + 48bit 时间戳 + 80bit 加密随机，进程内同毫秒单调。
-- **配置加载**（`project_evolution.config`）：默认配置 +
-  `.project-evolution/config.yaml` 覆盖；API Key 只能引用环境变量名。
-- **Raw Event Ledger**（`project_evolution.ledger`）：`raw.jsonl` 的可靠追加、
-  seq 分配（项目级写锁内单调递增）、批量原子写入（失败回滚不半写）、
-  按 seq 严格重放、ID 去重、尾部损坏检测与截断修复、中间损坏明确报错。
-- **Task 生命周期**（`project_evolution.tasks`）：start/pause/resume/complete/cancel
-  状态机（终态拒绝一切生命周期调用，重复 complete 幂等）、Session 绑定与跨 Session
-  续接、Checkpoint index 在 Task 内严格递增；Canonical 状态由 RawEvent Ledger
-  投影重建，`.runtime/tasks/` journal 只是恢复用镜像。
-- **Git 变化分析**（`project_evolution.git`）：只读 GitAdapter（子命令白名单 +
-  超时 + 参数数组，`.project-evolution/` 从一切采集永久排除）、逐文件内容快照 +
-  sha256 blob 去重、快照间增量 diff（不做 patch 相减；迭代空间为两份快照
-  `files` 的并集 **并集上 HEAD 区间 diff 的路径**——Checkpoint 之间被 commit
-  的改动同样可见，06 §4）、rename 识别（hash 精确 / 内容相似度 + find-renames
-  交叉验证）、diff evidence（patch 落 `evidence/diffs/`，secret 只记 path+hash
-  不落内容）、checkpoint 间的新提交生成归属该 Task/Checkpoint 的
-  `git_commit` RawEvents（06 §9，只动 `.project-evolution/` 的提交被排除）、
-  采集用 pathspec 限定在项目子树（项目目录嵌套在外层仓库内时不串入父仓库
-  变更，06 §5）、non-Git 明确降级。
-- **ChangeDigest**（`project_evolution.evolution`）：发往模型的确定性变更摘要
-  （changed/added/deleted/renamed、diff_stat、预算内 hunk 选取、truncated），
-  privacy filter 硬编码排除 secret 与 PEL 自身目录，generated/binary/lock
-  可追溯地记入 excluded；附 evidence 清单（模型 `evidence_ids` 的唯一合法来源）。
-- **Evolution Event Ledger**（Phase 05）：`evolution.jsonl` 与 Raw Ledger 同一套
-  可靠追加/重放保证（共用 `BaseJsonlLedger`）；每条事件携带
-  `analysis_batch_id` / `analyzer_version` / `prompt_version` / `analysis_key`；
-  同批次整批提交，`analysis_key` 跨批次重复在存储层被拒绝。
-- **Evolution Analyzer**（Phase 05）：`Checkpoint -> ChangeDigest -> Provider ->
-  Validator -> Dedup -> evolution.jsonl` 完整闭环。
-  - Provider 协议 + `MockProvider` / `OpenAICompatibleProvider` / `OllamaProvider`
-    （stdlib transport 可注入，失败统一 `ProviderError`）；
-  - Prompt 版本文件 `prompts/evolution-v1.md` 随包分发（只输出 JSON、不确定即
-    `events=[]`、无证据 reason 置空、refactor ≠ feature、临时变量 ≠ parameter）；
-  - Validator：非法类型 / 缺 Evidence / Evidence 不存在 / 不在本 Checkpoint
-    清单内 / parameter before=after 无解释 / 空 title / 超长字段 / 重复
-    analysis key 八类拒绝 + 类型级 Schema 校验，全部出结构化诊断；
-  - 幂等：`analysis_key = project|task|checkpoint|analyzer_version|digest_hash`，
-    同键返回已有 batch 不再调用模型；NOOP 结果入 runtime 缓存；
-  - 去重：normalized key + exact before/after + title Jaccard；
-  - Pending：模型失败转 `.runtime/pending/<ANL-id>.json`，Raw Ledger 不回滚，
-    `retry_pending()` 成功清除、失败累加 attempts；
-  - 默认异步：`BackgroundAnalysisWorker` 后台线程执行语义分析，
-    checkpoint 事实落盘即返回，Analyzer 失败不影响开发任务。
-- **评估基线**（Phase 05）：70 个人工标注离线样例
-  （10 feature + 20 parameter + 10 decision + 10 bug_fix + 20 NOOP），
-  `OfflineRuleProvider` 确定性提取，Precision 门槛 0.85（当前基线
-  Precision 1.0 / Recall 1.0 / NOOP 零违例）。
-- **SQLite 投影与查询层**（Phase 06，`project_evolution.index`）：
-  - `rebuild_projection()`：按 seq 重放 raw.jsonl + evolution.jsonl 构造全部
-    投影表（tasks/sessions/checkpoints/raw_events/evolution_events/evidence/
-    parameter_changes/feature_changes/decisions/bug_fixes/file_changes/
-    projection_meta），integrity check + WAL checkpoint 后切换指针；
-  - Windows 兼容切换协议：`.runtime/evolution-<n>.db` 版本化文件 +
-    `current-db.txt` 指针（tmp + `os.replace` 带重试），重建不替换旧文件，
-    旧连接在切换期间持续可读，旧版本文件延迟清理；
-  - `update_projection()`：水位（raw_seq/evo_seq）增量追平，与 Ledger 写锁
-    同一串行化策略；SQLite 失败只标记 stale，绝不回滚 Canonical Ledger；
-    full rebuild 与 incremental 结果逐表一致（测试保证）；
-  - `QueryService`：`get_task_history` / `get_parameter_history` /
-    `get_feature_history` / `get_decision_history` / `get_bug_history` /
-    `get_file_history`（rename 链追踪）/ `get_project_state`；Current State
-    全部由事件归约（Parameter 取最新有效 after、Decision 应用 supersede、
-    Feature 按 added/modified/removed），查询只读 SQLite 不调用任何模型；
-  - 性能：17k raw + 3k 语义事件 rebuild 约 4s，常规查询 < 120ms。
-- **MCP 集成**（Phase 07，`project_evolution.mcp`）：
-  - stdio MCP Server（`pel mcp serve` / `python -m project_evolution.mcp`）：
-    initialize 版本协商（2024-11-05 / 2025-03-26 / 2025-06-18）、tools/list、
-    tools/call、ping；stdout 只写协议消息（handler 执行期间第三方 print 一律
-    改道 stderr），logging 全部 stderr，连续 100+ 次调用不破坏协议（测试保证）；
-  - 五个核心工具 + 可选下钻：`start_task` / `checkpoint_task` / `complete_task` /
-    `get_project_state` / `get_history`（task|parameter|feature|decision|bug|file|
-    version）/ `get_evidence`（EVD- patch 与 RAW- 事件，内容裁剪到 20k 字符）；
-  - 语义分析默认异步：checkpoint 事实与 Evidence 落盘即返回
-    （`checkpoint_saved=true, analysis_status=pending`），Evolution Model 失败
-    绝不把工具调用整体判为 failed（partial success 语义）；
-  - Project Resolution：显式 `project`（name/id/root 精确匹配）→ 当前绑定 →
-    单项目 pinned（`--project`）；多项目走 `--registry` JSON 文件；
-    无法唯一解析时报 `PROJECT_AMBIGUOUS` / `PROJECT_NOT_FOUND`，绝不猜测；
-  - 稳定错误码（code/message/recoverable 三字段）：`PROJECT_NOT_FOUND` /
-    `PROJECT_AMBIGUOUS` / `TASK_NOT_FOUND` / `INVALID_TASK_STATE` /
-    `GIT_UNAVAILABLE` / `LEDGER_WRITE_FAILED` / `ANALYSIS_PENDING` /
-    `INVALID_ARGUMENT` / `EVIDENCE_NOT_FOUND` / `INTERNAL_ERROR`；
-    内部异常细节只写 server 日志，永不把 traceback 返回给 Agent；
-  - 查询工具先做增量投影追平，响应携带 `projection.stale / in_sync` 元数据。
-- **Dashboard 与导出**（Phase 08，`project_evolution.dashboard`）：
-  - FastAPI read-only API（全 GET）：`/api/overview` / `/api/timeline` /
-    `/api/tasks/{id}` / `/api/parameters/{name}` / `/api/features/{name}` /
-    `/api/decisions/{subject}` / `/api/bugs` / `/api/evidence/{id}`，
-    数据全部来自 Query Service（先增量追平投影，与 MCP 查询路径一致）；
-  - 四个必做页面（无 JS / 无前端构建的服务端渲染）：Project Overview、
-    Timeline（Task/Feature/Parameter/Decision/Bug/Version kind 筛选，
-    Checkpoint 可折叠，File Event 不进入 Timeline）、Task Detail
-    （Checkpoint / Changed Files / Tests / Evolution Events / Evidence 入口
-    均可展开）、Parameter History（Before → After → Current，含按 scope
-    拆分）；
-  - Evidence 下钻：`/evidence/{EVD-id}` 以纯文本 `<pre>` 展示 Patch
-    （裁剪到 20k 字符），元数据来自投影 evidence 表；
-  - `pel export --format markdown|html [--output FILE]`：10 节结构的
-    Evolution Report（总览 / 时间范围 / Tasks / Feature / Parameter /
-    Decision / Bug-Fix / 关键 Changed Files / 当前状态 / Provenance 摘要），
-    关键结论携带 `[EVO-*]` / `[RAW-*]` Event ID，可独立生成；
-  - 安全（11 §9）：所有动态文本经统一 `html.escape` 管线（表格 / 列表 /
-    details 构建函数自动转义，无 raw HTML 出口）；所有响应带
-    `X-Content-Type-Options: nosniff`；恶意 commit message /
-    title / patch 只显示为文本（XSS 测试保证）；本地服务默认仅监听
-    loopback（`pel dashboard`，默认 `127.0.0.1:8642`）；Dashboard 只读且
-    与 Core / MCP 完全解耦 —— 关闭/删除 Dashboard 不影响采集与 Ledger
-    （测试保证：运行期间账本字节不变，停止后 Ledger 追加 / MCP 查询 /
-    投影重建照常）；
-  - Web 栈为可选 extra：`pip install 'project-evolution[dashboard]'`
-    （fastapi + uvicorn）；不装时 `pel export` 与其余命令不受影响。
+三个月后你问「透明度步长为什么是 5%？」「双击取内容为什么不选快捷键？」「那个中键卡死的 bug 当时怎么修的？」——Git 里没有答案（只记了改了什么，没记为什么），聊天记录早就随会话蒸发了。PEL 在 Agent 干活的过程中自动把**事实与工程语义**记成结构化、可查询、带证据的历史。
 
-## 安装与开发
+---
+
+## 它是怎么工作的
+
+```
+   Coding Agent（ZCode / Codex / Claude Code / 任何 MCP 或 shell 客户端）
+        │
+        │  开任务/阶段/收工时调用（MCP 工具 或 CLI）
+        ▼
+┌─────────────────────────────────────────────────────────┐
+│                     PEL 三层结构                          │
+│                                                          │
+│  ① 事实层（毫秒落盘，永不丢失，模型碰不到）               │
+│     raw.jsonl        只追加的事件账本                     │
+│     evidence/*.patch diff 证据文件（每条语义事件的收据）   │
+│                                                          │
+│  ② 语义层（后台异步，失败不阻塞开发）                     │
+│     digest(预算内变更摘要) → LLM 提案 → 证据校验 → 去重   │
+│     → evolution.jsonl（四类事件，见下）                   │
+│                                                          │
+│  ③ 查询层（可丢弃派生层，随时从账本重建）                 │
+│     SQLite 投影 + 向量索引                               │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Agent 的日常只有三步**，其余全自动：
+
+```
+start_task      开工：拍 git 基线
+  │  写代码、跑测试
+checkpoint      阶段：diff/测试结果/事实摘要 毫秒落盘
+  │             └─ 后台：LLM 蒸馏出语义事件（异步，断网转 pending 可重试）
+complete_task   收工：收尾 checkpoint + 关闭任务
+```
+
+## 记下来的是什么
+
+四类语义事件，每条**强制挂证据 ID**（模型编造的证据会被整批拒绝）：
+
+| 类型 | 记什么 | 真实示例 |
+|---|---|---|
+| **parameter_change** | 参数从什么变成什么、为什么 | `OpacityMath.Step: 0.1 → 0.05`，理由"10% 太粗，对齐参考图时不好微调" |
+| **decision** | 选了什么、备选是什么、为什么 | 「取内容触发选双击左键」，弃快捷键（贴图窗口收不到键盘） |
+| **bug_fix** | 现象 → 根因 → 修法 → 验证 | 「暂停残留吞放标志 → 恢复后中键卡死 → 补一行重置 → 复现测试通过」 |
+| **feature_change** | 能力边界的变化 | 「取字手势升级：QR 优先、OCR 兜底」 |
+
+一条记录长这样（查询「透明度步长的历史」的返回）：
+
+```
+滚轮透明度步长 10% → 5%
+  参数    OpacityMath.Step: 0.1 → 0.05（透明度比例/每格滚轮）
+  理由    10% 太粗，对齐参考图时不好微调
+  时间    2026-10-09T08:34:55（UTC，微秒级；另有单调 seq 保证严格顺序）
+  证据    EVD-01M4FTBYPNHMGQKAWA23PJ9PNC → 磁盘上的 diff 原文，可核对
+```
+
+## 功能一览
+
+- **任务生命周期**：start / checkpoint / complete，跨会话续接（context compact 后新会话接着干）
+- **语义分析**：DeepSeek / OpenAI 兼容 / Ollama 任选；prompt 固定版本可重放；同 checkpoint 重试幂等
+- **查询四件套**：
+  - `get_project_state`——当前全部参数/生效决策/近期 bug（开场恢复上下文用）
+  - `get_history`——按任务/文件/参数/决策精确查历史
+  - `search_events`——**语义检索，中英跨语言**（中文问题命中英文事件；本地向量模型，离线可用）
+  - `get_evidence`——按证据 ID 下钻 diff 原文
+- **报告导出**：`pel export` 一键生成完整演进报告（Markdown / HTML）
+- **可靠性**（七项故障注入实测）：断网/模型输出非法/Git 不可用/SQLite 删除/账本截断/MCP 重启/漏 checkpoint——**事实历史零丢失**
+- **隐私**：secret 文件（.env/*.pem/*.key…）内容永不进模型与证据，清单可配置
+
+---
+
+## 使用方法
+
+### 1. 安装
 
 ```bash
-uv venv --python 3.12 .venv
-uv pip install --python .venv -e ".[dev]"
-
-.venv/Scripts/python -m pytest        # 测试（含 10k 事件规模测试）
-.venv/Scripts/python -m ruff check .  # lint
-.venv/Scripts/python -m mypy          # 类型检查
+pip install git+https://github.com/Vandarkun/ProjectEvolution
+# 或克隆后本地安装
+pip install -e .
 ```
 
-## CLI
+依赖（pydantic / PyYAML / fastembed）自动装齐；首次语义检索会下载本地 embedding 模型（约 100MB，之后离线可用）。
 
-```bash
-pel --version
-pel doctor [--project PATH] [--repair] [--json]
+### 2. 配置（项目根 `pel.config.yaml`）
 
-# 同步语义分析（测试/CLI 场景；产品路径默认走后台异步 worker）
-pel analyze TASK-... CHK-... --project PATH [--provider mock|openai|ollama]
-pel retry-pending --project PATH [--provider ...] [--json]
+全量配置一次看清，未写的键用内置默认值（完整模板见仓库根 [`pel.config.yaml.example`](pel.config.yaml.example)）。最少只需填分析模型：
 
-# SQLite 投影：按 seq 全量重放重建（删除 DB 后可完整恢复）
-pel index rebuild --project PATH [--json]
+```yaml
+analyzer_provider: openai            # mock | openai | ollama
+analyzer_model: deepseek-chat
+analyzer_base_url: https://api.deepseek.com
+analyzer_api_key: sk-xxxx            # 明文（本文件已被 gitignore）
+# 或 analyzer_api_key_env: DEEPSEEK_API_KEY   # 引用环境变量
 
-# MCP stdio Server（Phase 07）
-pel mcp serve --project PATH [--provider mock|openai|ollama] [--model ...] [--registry FILE]
-pel mcp agent-instructions [--project NAME]   # 输出最短 AGENTS.md 规则样例
+retrieval:
+  model: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2  # 跨语言检索
 
-# Task 兼容入口（只支持 Shell 的 Agent；输出 JSON）
-pel task start "TITLE" --project PATH [--agent codex] [--session-id SES-...]
-pel task checkpoint TASK-... --project PATH --summary "..." [--test "cmd=passed"] [--provider ...]
-pel task complete TASK-... --project PATH --summary "..." [--provider ...] [--no-wait]
-
-# Evolution Report 导出（Phase 08；可独立生成，无需 Dashboard 运行）
-pel export --project PATH --format markdown|html [--output FILE]
-
-# 本地只读 Dashboard（Phase 08；默认仅监听 127.0.0.1，需 [dashboard] extra）
-pel dashboard --project PATH [--host 127.0.0.1] [--port 8642]
+change_digest:
+  max_files: 50                      # 送模型的变更摘要预算
+  max_total_diff_chars: 40000
 ```
 
-`pel doctor` 检查 raw ledger 完整性（JSON 可解析、ID 重复、seq 单调、尾部损坏）；
-`--repair` 只截断"未确认写入"的损坏尾部，绝不静默修改中间损坏。
+> 真实配置不入库（gitignore 排除 `pel.config.yaml`），仓库里提交 example 模板。
+> 未配置分析模型时自动降级为 mock：任务/事实/查询全部可用，只是不产出语义事件。
 
-`pel analyze` / `pel retry-pending` 的 Provider 选择：`--provider mock`（默认），
-真实模型用 `--provider openai --model ... --base-url ... --api-key-env NAME` 或
-`--provider ollama --model ...`。真实 Provider 的集成测试默认跳过，由环境变量
-opt-in（见 `tests/test_providers_integration.py` 头部说明）。
+### 3. 接入你的 Coding Agent
 
-## 快速上手
-
-```python
-from project_evolution.evolution import MockProvider
-from project_evolution.git import create_git_aware_task_services
-
-# Task/Checkpoint 服务 + Git 采集 + 默认异步语义分析（传 analysis_provider）
-services = create_git_aware_task_services(
-    "./my-project", project_id="PRJ-...", analysis_provider=MockProvider()
-)
-
-task = services.tasks.start_task("PRJ-...", "实现外部窗口透明度", agent="codex")
-
-# ... 编码 ...
-
-# 阶段 Checkpoint：事实与证据先落盘并立即返回；语义分析在后台执行
-cp = services.checkpoints.create_checkpoint(task.id, summary="核心逻辑完成")
-
-services.analysis_worker.wait_idle()   # 可选：等待后台分析完成
-services.analysis_worker.stop()
-
-from project_evolution.ledger import iter_evolution_events
-for event in iter_evolution_events("./my-project"):  # 严格按 seq 顺序
-    print(event.type, event.title, event.evidence_ids)
-
-services.tasks.complete_task(task.id, summary="透明度完成")
-
-# SQLite 投影与查询（Phase 06）
-from project_evolution.index import QueryService, rebuild_projection, update_projection
-
-rebuild_projection("./my-project")          # 或：pel index rebuild
-update_projection("./my-project")           # 增量追平（无 DB 时自动 rebuild）
-
-query = QueryService("./my-project")
-state = query.get_project_state()           # 当前参数 / 活跃决策 / Feature
-history = query.get_parameter_history("OpacityMin")
-print(state.current_parameters, history.current)
-
-# Timeline 与 Dashboard（Phase 08）
-timeline = query.get_timeline(["parameter", "decision"], limit=50)
-for item in timeline:
-    print(item.timestamp, item.kind, item.title, f"[{item.event_id}]")
-
-# pel dashboard → http://127.0.0.1:8642（Overview / Timeline / Task Detail /
-# Parameter History / Evidence 下钻；全部只读）
-```
-
-设计文档见 `project-evolution-ledger-docs/docs/`。
-
-## MCP Server 接入 Coding Agent
-
-单项目 pinned（Codex / Claude Code / 任意 MCP 客户端的 stdio 配置）：
+**MCP 客户端**（Claude Code / Codex / ZCode / Cursor…）——注册服务器条目（各家字段名略有差异，形式相同）：
 
 ```json
-{
-  "mcpServers": {
-    "pel": {
-      "command": "pel",
-      "args": ["mcp", "serve", "--project", "D:/code/MyProject"]
-    }
-  }
-}
-```
-
-多项目 registry（`registry.json`，`name` 唯一；工具调用必须显式传 `project`）：
-
-```json
-{"projects": [{"name": "MyProject", "root": "D:/code/MyProject"}]}
-```
-
-```json
-{"args": ["mcp", "serve", "--registry", "D:/code/registry.json"]}
-```
-
-真实语义分析（默认 mock，不联网）：`--provider openai --model ... --api-key-env NAME`
-或 `--provider ollama --model ...`。
-
-Agent 侧最短规则（`pel mcp agent-instructions` 输出，可直接粘贴进 AGENTS.md）：
-
-```text
-This project uses the Project Evolution Ledger (PEL) MCP tools.
-
-- Call `start_task` when you begin a well-defined development task
-  (feature, bugfix, refactor).
-- Call `checkpoint_task` when a significant subgoal is done, an important
-  design choice was made, key tests first pass, or you are about to
-  compact/switch context.
-- Call `complete_task` when the task is finished.
-- Call `get_history` / `get_project_state` when you need past designs,
-  parameters, decisions, or bug fixes.
-- Never edit files under `.project-evolution/events` by hand.
-
-Do not call these tools every turn — only at the moments above.
-```
-- **真实项目验证**（Phase 09，`docs/06-validation/`）：以 ScreenPin 为目标、
-  ZCode 为 Coding Agent、DeepSeek 为分析模型完成 6 个真实任务（含 1 个
-  3-checkpoint 跨会话长任务）+ 七项故障注入。产出 23 条语义事件
-  （12 decision / 6 feature / 3 parameter / 2 bug_fix，建议标注 FP=0）、
-  完整 Evolution Report 导出与 V0.1 Release Gate 十条核对（全部通过，
-  FP 率待人工标注确认）。验证期间发现并修复两处 phase-05 缺陷：
-  模型输出缺 `events` 键被静默当 NOOP；digest 清单内 RAW 证据 id 被
-  存在性校验误拒（三连漏检根因）。详见
-  `project-evolution-ledger-docs/docs/06-validation/phase-09-validation-report.md`。
-- **语义向量检索**（fastembed 为核心依赖，装包即用）：
-  本地 ONNX 小模型（paraphrase-multilingual-MiniLM，中英双语均衡，真实语料 A/B 实测选定）为语义事件建立向量
-  索引，`pel search` / MCP `search_events` 跨语言召回——中文查询可命中英文
-  事件、反之亦然（phase-09 实测的精确匹配盲区）。铁律不变：向量只返回
-  事件引用（ID + 分数），事实与证据仍由账本/投影按键提供；向量表是可丢弃
-  的派生层（随投影重建自动重嵌，换模型自动清旧向量）。
-- **文件优先的配置体系**（2026-10）：分析器接线全部在**项目根**
-  `pel.config.yaml`（与项目自身配置同级；`.project-evolution/` 是纯生成
-  事实目录，不放任何手编文件）——`analyzer_provider` / `analyzer_model` /
-  `analyzer_base_url` / `analyzer_api_key`（明文，优先）或
-  `analyzer_api_key_env`（环境变量名，后备）；CLI/MCP 的 provider 参数缺省
-  回退 config 再回退 mock，MCP 服务器命令零参数。含真实信息的
-  `pel.config.yaml` 不入库（gitignore 按文件名精确排除），仓库提交
-  `pel.config.yaml.example` 全量模板；旧位置 `.project-evolution/config.yaml`
-  仍兼容读取（新路径优先）。接入方式为 MCP 生态标准动作——在你的 Agent 客户端注册服务器条目：
-  ```json
-  { "mcpServers": { "pel": { "command": "pel",
+{ "mcpServers": { "pel": {
+    "command": "pel",
     "args": ["mcp", "serve", "--project", "/path/to/your/project"] } } }
-  ```
-  （各家字段名略有差异：zcode `.zcode/config.json` 的 `mcp.servers`、
-  codex `~/.codex/config.toml` 的 `[mcp_servers.pel]`；注册后 Agent 自动
-  获得 7 个工具与使用指引；CLI 通道对所有 shell Agent 零注册可用。）
+```
+
+注册后 Agent 自动获得 7 个工具与使用时机指引。再把记录规则放进项目的 `AGENTS.md`（一段话即可）：
+
+```bash
+pel mcp agent-instructions >> AGENTS.md   # 生成规则片段
+```
+
+**任何能跑 shell 的 Agent**——零注册，直接用 CLI（见下）。
+
+### 4. 日常使用（Agent 自动做，人也可以手动）
+
+```bash
+# 任务生命周期（shell Agent 的通道）
+pel task start "修复登录超时" --agent zcode
+# ...开发、跑测试...
+pel task checkpoint TASK-xxx --summary "连接超时 30s→10s，加重试" \
+    --test "pytest -q=passed"
+pel task complete TASK-xxx
+
+# 语义检索（中英跨语言）
+pel search "登录超时当时为什么改"
+pel search "why did login timeout change"
+
+# 导出演进报告
+pel export --format markdown --output report.md
+
+# 运维：账本体检/修复、投影重建、失败分析重试
+pel doctor [--repair]
+pel index rebuild
+pel retry-pending
+```
+
+---
+
+## 数据放在哪、能信吗
+
+```
+你的项目/
+├── pel.config.yaml          配置（手编，git 忽略）
+└── .project-evolution/      全部生成数据（git 忽略，纯机器产物）
+    ├── events/raw.jsonl         事实账本（只追加，严格顺序 seq）
+    ├── events/evolution.jsonl   语义事件账本
+    ├── evidence/diffs/*.patch   diff 证据文件
+    └── .runtime/                SQLite 投影 + 向量索引（删了随时重建）
+```
+
+信任的三根支柱：
+
+1. **事实与解释分离**：事实由代码确定性采集，模型只能"提案"语义事件，且每个说法必须挂本 checkpoint 证据清单内的 ID——编造即拒
+2. **一切可重建**：SQLite/向量索引是派生层，`pel index rebuild` 从 JSONL 重放；账本截断可检测可修复
+3. **全程可追溯**：每条事件带 analyzer 版本、prompt 版本、输入指纹，未来可重跑对比质量
+
+## 文档与状态
+
+- 设计文档：[`project-evolution-ledger-docs/`](project-evolution-ledger-docs/docs/)（架构 / 数据模型 / 各阶段实现）
+- V0.1 真实项目验证报告（ScreenPin × 6 任务 × 23 语义事件 × 七项故障注入）：[`docs/06-validation/phase-09-validation-report.md`](project-evolution-ledger-docs/docs/06-validation/phase-09-validation-report.md)
+- 状态：V0.1 验收全部通过；测试 396 项全绿
