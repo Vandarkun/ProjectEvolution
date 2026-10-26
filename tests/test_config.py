@@ -117,3 +117,20 @@ def test_api_key_none_when_env_missing(
     )
     config = load_config(tmp_path)
     assert config.analyzer_api_key_resolved is None
+
+
+def test_config_root_path_precedence_over_legacy(tmp_path: Path) -> None:
+    """根级 pel.config.yaml 优先；旧位置 .project-evolution/config.yaml 兼容回退。"""
+    from project_evolution.config import load_config
+
+    # 只有旧位置：兼容读取
+    legacy = tmp_path / ".project-evolution"
+    legacy.mkdir()
+    (legacy / "config.yaml").write_text("analyzer_model: legacy-model\n", encoding="utf-8")
+    assert load_config(tmp_path).analyzer_model == "legacy-model"
+
+    # 新位置出现后优先
+    (tmp_path / "pel.config.yaml").write_text(
+        "analyzer_model: root-model\n", encoding="utf-8"
+    )
+    assert load_config(tmp_path).analyzer_model == "root-model"

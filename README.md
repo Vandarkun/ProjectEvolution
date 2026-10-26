@@ -295,10 +295,12 @@ Do not call these tools every turn — only at the moments above.
   dsh（DeepSeek Harness）`cordis.yml` 的 dsh-mcp-client 插件条目、
   dsh 处于 developer preview，配置格式可能随版本变化。
 
-- **文件优先的配置体系**（2026-10）：分析器接线全部在
-  `.project-evolution/config.yaml`——`analyzer_provider` / `analyzer_model` /
+- **文件优先的配置体系**（2026-10）：分析器接线全部在**项目根**
+  `pel.config.yaml`（与项目自身配置同级；`.project-evolution/` 是纯生成
+  事实目录，不放任何手编文件）——`analyzer_provider` / `analyzer_model` /
   `analyzer_base_url` / `analyzer_api_key`（明文，优先）或
   `analyzer_api_key_env`（环境变量名，后备）；CLI/MCP 的 provider 参数缺省
-  回退 config 再回退 mock，MCP 服务器命令零参数。含真实信息的 config.yaml
-  不入库（gitignore 排除 `.project-evolution/*`），仓库提交
-  `config.yaml.example` 模板——两者均由 `pel init` 自动生成。
+  回退 config 再回退 mock，MCP 服务器命令零参数。含真实信息的
+  `pel.config.yaml` 不入库（gitignore 按文件名精确排除），仓库提交
+  `pel.config.yaml.example` 模板——两者均由 `pel init` 自动生成；
+  旧位置 `.project-evolution/config.yaml` 仍兼容读取（新路径优先）。

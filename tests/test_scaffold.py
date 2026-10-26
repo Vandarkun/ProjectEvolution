@@ -154,31 +154,31 @@ def test_dsh_home_env(home: Path, tmp_path: Path, with_uv, monkeypatch) -> None:
 
 
 def test_analyzer_config_fill_only_missing(home: Path, tmp_path: Path, with_uv) -> None:
-    """config.yaml 只填缺失键：用户已配置的模型不被覆盖。"""
+    """项目根 pel.config.yaml 只填缺失键：用户已配置的不被覆盖。"""
     import yaml
 
     project = tmp_path / "proj"
     project.mkdir()
     run_init("zcode", project, None)
-    cfg = yaml.safe_load((project / ".project-evolution" / "config.yaml").read_text("utf-8"))
+    cfg = yaml.safe_load((project / "pel.config.yaml").read_text("utf-8"))
     assert cfg["analyzer_model"] == "deepseek-chat"
     assert cfg["analyzer_api_key_env"] == "DEEPSEEK_API_KEY"
 
     # 用户改用自己的接线后重跑：既有选择不被覆盖（缺失键允许补齐）
-    (project / ".project-evolution" / "config.yaml").write_text(
+    (project / "pel.config.yaml").write_text(
         "analyzer_provider: ollama\nanalyzer_model: my-model\n"
         "analyzer_base_url: http://localhost:11434\n"
         "analyzer_api_key_env: MY_KEY\n",
         encoding="utf-8",
     )
     result = run_init("zcode", project, None)
-    assert ".project-evolution/config.yaml (configured)" in result.skipped
-    cfg = yaml.safe_load((project / ".project-evolution" / "config.yaml").read_text("utf-8"))
+    assert "pel.config.yaml (configured)" in result.skipped
+    cfg = yaml.safe_load((project / "pel.config.yaml").read_text("utf-8"))
     assert cfg["analyzer_model"] == "my-model"
 
 
 def test_example_template_and_gitignore(home: Path, tmp_path: Path, with_uv) -> None:
-    """真实 config 不入库、example 模板可入库的 gitignore 策略。"""
+    """配置在项目根；.project-evolution/ 整目录忽略（纯事实目录）；example 可入库。"""
     project = tmp_path / "proj"
     project.mkdir()
     (project / ".gitignore").write_text(".project-evolution/\n", encoding="utf-8")
@@ -188,17 +188,17 @@ def test_example_template_and_gitignore(home: Path, tmp_path: Path, with_uv) -> 
     gi_lines = [
         ln.strip() for ln in (project / ".gitignore").read_text(encoding="utf-8").splitlines()
     ]
-    # 旧的整目录排除行必须被替换成「排内容 + 保留模板」的写法
-    assert ".project-evolution/" not in gi_lines
-    assert ".project-evolution/*" in gi_lines
-    assert "!.project-evolution/config.yaml.example" in gi_lines
+    # 事实目录整目录忽略；真实配置按文件名精确排除（example 天然可入库）
+    assert ".project-evolution/" in gi_lines
+    assert "pel.config.yaml" in gi_lines
+    assert "!.project-evolution/config.yaml.example" not in gi_lines
 
-    example = project / ".project-evolution" / "config.yaml.example"
+    example = project / "pel.config.yaml.example"
     assert example.is_file() and "sk-xxxxxxxx" in example.read_text(encoding="utf-8")
     import yaml
 
     cfg = yaml.safe_load(
-        (project / ".project-evolution" / "config.yaml").read_text(encoding="utf-8")
+        (project / "pel.config.yaml").read_text(encoding="utf-8")
     )
     assert cfg["analyzer_provider"] == "openai"
     assert cfg["analyzer_base_url"] == "https://api.deepseek.com"

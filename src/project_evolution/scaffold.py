@@ -114,7 +114,7 @@ def _write_agents_md(project: Path) -> bool:
     return True
 
 
-CONFIG_EXAMPLE = """# PEL 分析器接线示例（复制为 config.yaml 并填入真实值；真配置不入库）
+CONFIG_EXAMPLE = """# PEL 分析器接线示例（复制为 pel.config.yaml 并填真实值；真配置不入库）
 analyzer_provider: openai          # mock | openai | ollama
 analyzer_model: deepseek-chat
 analyzer_base_url: https://api.deepseek.com
@@ -125,18 +125,16 @@ analyzer_api_key: sk-xxxxxxxxxxxxxxxx
 
 
 def _write_analyzer_config(project: Path, api_key_env: str) -> bool:
-    """.project-evolution/config.yaml：只填缺失的分析器键（已配置的不动）。
+    """项目根 ``pel.config.yaml``：与项目自身配置同级（只填缺失键）。
 
-    接线全部落在文件里（provider/model/base_url/key 环境变量名），
-    启动命令零参数；e2e 实测无此文件时 serve 不读任何 env 里的 key（401）。
-    同时生成 config.yaml.example 模板并设置 gitignore：真实配置不入库。
+    ``.project-evolution/`` 是纯生成事实目录，不放任何手编文件。
+    接线全部落在文件里（provider/model/base_url/key），启动命令零参数；
+    e2e 实测无此文件时 serve 不读任何 env 里的 key（401）。
     """
     import yaml
 
-    base = project / ".project-evolution"
-    base.mkdir(parents=True, exist_ok=True)
-    path = base / "config.yaml"
-    example = base / "config.yaml.example"
+    path = project / "pel.config.yaml"
+    example = project / "pel.config.yaml.example"
     if not example.is_file():
         example.write_text(CONFIG_EXAMPLE, encoding="utf-8")
 
@@ -165,20 +163,20 @@ def _write_analyzer_config(project: Path, api_key_env: str) -> bool:
 
 
 def _write_gitignore(project: Path) -> None:
-    """忽略 .project-evolution/ 全部内容，但保留 example 模板可入库。
+    """.project-evolution/ 整目录忽略（纯生成事实）；真实配置按文件名精确排除。
 
-    注意 git 的规则：目录被整体排除后 ``!`` 否定不生效，所以必须用
-    ``.project-evolution/*`` + 否定条目的写法；若项目已有整目录排除的
-    旧行，替换为新写法。
+    根级配置无需否定规则：example 是独立文件名，天然可入库。
     """
     gi = project / ".gitignore"
     lines = gi.read_text(encoding="utf-8").splitlines() if gi.is_file() else []
-    wanted = [
-        ".project-evolution/*",
-        "!.project-evolution/config.yaml.example",
+    wanted = [".project-evolution/", "pel.config.yaml"]
+    # 清掉旧写法（内容排除 + example 否定）
+    lines = [
+        ln
+        for ln in lines
+        if ln.strip()
+        not in (".project-evolution/*", "!.project-evolution/config.yaml.example")
     ]
-    # 移除旧的整目录排除（会让否定失效）
-    lines = [ln for ln in lines if ln.strip() not in (".project-evolution/", ".project-evolution")]
     if all(w in lines for w in wanted):
         return
     for w in wanted:
@@ -217,9 +215,9 @@ def init_zcode(project: Path, server_command: str | None) -> ScaffoldResult:
     else:
         result.skipped.append(".zcode/config.json (unchanged)")
     if _write_analyzer_config(project, "DEEPSEEK_API_KEY"):
-        result.written.append(".project-evolution/config.yaml")
+        result.written.append("pel.config.yaml")
     else:
-        result.skipped.append(".project-evolution/config.yaml (configured)")
+        result.skipped.append("pel.config.yaml (configured)")
     if _write_agents_md(project):
         result.written.append("AGENTS.md")
     else:
@@ -265,9 +263,9 @@ def init_codex(project: Path, server_command: str | None) -> ScaffoldResult:
     else:
         result.skipped.append(f"{config} (unchanged)")
     if _write_analyzer_config(project, "DEEPSEEK_API_KEY"):
-        result.written.append(".project-evolution/config.yaml")
+        result.written.append("pel.config.yaml")
     else:
-        result.skipped.append(".project-evolution/config.yaml (configured)")
+        result.skipped.append("pel.config.yaml (configured)")
     if _write_agents_md(project):
         result.written.append("AGENTS.md")
     else:
@@ -360,9 +358,9 @@ def init_dsh(project: Path, server_command: str | None) -> ScaffoldResult:
     else:
         result.skipped.append(f"{config} (unchanged)")
     if _write_analyzer_config(project, "DEEPSEEK_API_KEY"):
-        result.written.append(".project-evolution/config.yaml")
+        result.written.append("pel.config.yaml")
     else:
-        result.skipped.append(".project-evolution/config.yaml (configured)")
+        result.skipped.append("pel.config.yaml (configured)")
     if _write_agents_md(project):
         result.written.append("AGENTS.md")
     else:

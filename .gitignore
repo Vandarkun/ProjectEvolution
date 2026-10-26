@@ -14,5 +14,5 @@ dist/
 .ruff_cache/
 
 # PEL 自身数据（本仓库不作为 PEL 目标项目时也不会误提交）
-.project-evolution/*
-!.project-evolution/config.yaml.example
+.project-evolution/
+pel.config.yaml

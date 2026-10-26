@@ -1,14 +1,15 @@
 """配置加载：默认配置 + ``.project-evolution/config.yaml`` 覆盖。
 
-约定（2026-10 起以文件为主，环境变量只作后备）：
+配置文件：项目根 ``pel.config.yaml``（2026-10 起以文件为主，环境变量只作后备）：
 
 - 分析器的全部接线（provider / model / base_url / key）都写在 config.yaml，
   改配置不用动环境变量或启动命令；
 - key 有两种写法：``analyzer_api_key``（明文，方便）或
   ``analyzer_api_key_env``（引用环境变量名，CI 友好）；两者都在时明文优先；
-- **含真实信息的 config.yaml 不入库**：``.gitignore`` 排除整个
-  ``.project-evolution/``，仓库里提交 ``config.yaml.example`` 模板
-  （``pel init`` 自动生成这两样）。
+- 配置在项目根 ``pel.config.yaml``（与项目自身配置同级），真实配置不入库
+  （gitignore 精确排除该文件名），仓库提交 ``pel.config.yaml.example`` 模板
+  （``pel init`` 自动生成这两样）；``.project-evolution/`` 是纯生成事实目录，
+  整目录忽略、不放任何手编文件。
 """
 
 from __future__ import annotations
@@ -24,7 +25,11 @@ from pydantic import ValidationError as PydanticValidationError
 from project_evolution.errors import ConfigError
 
 PEL_DIR_NAME = ".project-evolution"
-CONFIG_FILENAME = "config.yaml"
+#: 配置文件在项目根（与项目自身配置同级）；.project-evolution/ 是纯生成
+#: 事实目录（events/evidence/runtime），不放任何手编文件。
+CONFIG_FILENAME = "pel.config.yaml"
+#: 兼容旧位置（.project-evolution/config.yaml）；新位置优先
+_LEGACY_CONFIG = ("config.yaml",)
 
 
 class ChangeDigestConfig(BaseModel):
@@ -82,7 +87,7 @@ class PelConfig(BaseModel):
 
 
 def config_path(project_root: str | Path) -> Path:
-    return Path(project_root) / PEL_DIR_NAME / CONFIG_FILENAME
+    return Path(project_root) / CONFIG_FILENAME
 
 
 def load_config(project_root: str | Path) -> PelConfig:
@@ -94,6 +99,10 @@ def load_config(project_root: str | Path) -> PelConfig:
     :raises ConfigError: 配置文件无法解析或不合法。
     """
     path = config_path(project_root)
+    if not path.is_file():
+        legacy = Path(project_root) / PEL_DIR_NAME / "config.yaml"
+        if legacy.is_file():
+            path = legacy
     data: dict[str, Any] = {}
     if path.is_file():
         try:
