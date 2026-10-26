@@ -280,21 +280,6 @@ Do not call these tools every turn — only at the moments above.
   事件、反之亦然（phase-09 实测的精确匹配盲区）。铁律不变：向量只返回
   事件引用（ID + 分数），事实与证据仍由账本/投影按键提供；向量表是可丢弃
   的派生层（随投影重建自动重嵌，换模型自动清旧向量）。
-- **一行命令接入 Coding Agent**（无需克隆仓库，`pel init`）：
-  ```bash
-  # zcode（workspace 配置，下个会话自动连接）
-  uvx --from "git+https://github.com/Vandarkun/ProjectEvolution" pel init --agent zcode
-  # codex（~/.codex/config.toml）
-  uvx --from "git+https://github.com/Vandarkun/ProjectEvolution" pel init --agent codex
-  # dsh = DeepSeek Harness（deepseek-ai/deepseek-harness，~/.dsh/cordis.yml 插件条目）
-  uvx --from "git+https://github.com/Vandarkun/ProjectEvolution" pel init --agent dsh
-  ```
-  幂等合并（不覆盖既有配置），同时生成项目 AGENTS.md 记录规则；生成的
-  MCP 服务器命令同为 uvx 直装源形式，换机器不依赖本地路径。国内网络可加
-  `UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple`。已支持 harness 的扩展机制：zcode `.zcode/config.json`、codex `[mcp_servers]` TOML、
-  dsh（DeepSeek Harness）`cordis.yml` 的 dsh-mcp-client 插件条目、
-  dsh 处于 developer preview，配置格式可能随版本变化。
-
 - **文件优先的配置体系**（2026-10）：分析器接线全部在**项目根**
   `pel.config.yaml`（与项目自身配置同级；`.project-evolution/` 是纯生成
   事实目录，不放任何手编文件）——`analyzer_provider` / `analyzer_model` /
@@ -302,5 +287,5 @@ Do not call these tools every turn — only at the moments above.
   `analyzer_api_key_env`（环境变量名，后备）；CLI/MCP 的 provider 参数缺省
   回退 config 再回退 mock，MCP 服务器命令零参数。含真实信息的
   `pel.config.yaml` 不入库（gitignore 按文件名精确排除），仓库提交
-  `pel.config.yaml.example` 模板——两者均由 `pel init` 自动生成；
-  旧位置 `.project-evolution/config.yaml` 仍兼容读取（新路径优先）。
+  `pel.config.yaml.example` 全量模板；旧位置 `.project-evolution/config.yaml`
+  仍兼容读取（新路径优先）。harness 接入脚手架（`pel init`）已移除，重新设计中。

@@ -102,7 +102,6 @@ def test_api_key_env_reference_resolution(
     config = load_config(tmp_path)
     assert config.analyzer_api_key_resolved == "sk-inline-wins"
 
-    # 真实 config 不入库的约定由 gitignore 保障（见 test_scaffold）
     assert "sk-inline-wins" in (pel_dir / "config.yaml").read_text(encoding="utf-8")
 
 

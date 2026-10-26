@@ -155,22 +155,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="skip waiting for background analysis before exit",
     )
 
-    init_cmd = sub.add_parser(
-        "init", help="adapt a harness (zcode/codex/dsh): MCP config + AGENTS.md"
-    )
-    init_cmd.add_argument(
-        "--agent",
-        required=True,
-        choices=["zcode", "codex", "dsh", "deepseek-harness"],
-        help="target coding agent harness (dsh = DeepSeek Harness)",
-    )
-    init_cmd.add_argument("--project", type=Path, default=Path.cwd(), help="project root")
-    init_cmd.add_argument(
-        "--server-command",
-        default=None,
-        help="override MCP server command (default: uvx from git source)",
-    )
-
     search = sub.add_parser(
         "search", help="semantic search over evolution events (retrieval extra)"
     )
@@ -260,8 +244,6 @@ def main(argv: list[str] | None = None) -> int:
         if args.task_command == "complete":
             return _task_command(args, "complete_task")
         parser.error("task requires a subcommand (start | checkpoint | complete)")
-    if args.command == "init":
-        return _init(args)
     if args.command == "search":
         return _search(args)
     if args.command == "export":
@@ -639,25 +621,6 @@ def _task_command(args: argparse.Namespace, tool: str) -> int:
 
 # --------------------------------------------------------------- phase-08
 
-
-def _init(args: argparse.Namespace) -> int:
-    """``pel init``：往目标 harness 写 MCP 注册 + AGENTS.md（幂等合并）。"""
-    from project_evolution.errors import PelError
-    from project_evolution.scaffold import run_init
-
-    try:
-        result = run_init(args.agent, args.project, args.server_command)
-    except PelError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 2
-    print(f"harness: {result.harness}")
-    for path in result.written:
-        print(f"  wrote:    {path}")
-    for path in result.skipped:
-        print(f"  unchanged:{path}")
-    for note in result.notes:
-        print(f"  note:     {note}")
-    return 0
 
 
 def _search(args: argparse.Namespace) -> int:
