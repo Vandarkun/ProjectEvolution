@@ -172,8 +172,7 @@ pel retry-pending
 2. **一切可重建**：SQLite/向量索引是派生层，`pel index rebuild` 从 JSONL 重放；账本截断可检测可修复
 3. **全程可追溯**：每条事件带 analyzer 版本、prompt 版本、输入指纹，未来可重跑对比质量
 
-## 文档与状态
+## 状态
 
-- 设计文档：[`project-evolution-ledger-docs/`](project-evolution-ledger-docs/docs/)（架构 / 数据模型 / 各阶段实现）
-- V0.1 真实项目验证报告（ScreenPin × 6 任务 × 23 语义事件 × 七项故障注入）：[`docs/06-validation/phase-09-validation-report.md`](project-evolution-ledger-docs/docs/06-validation/phase-09-validation-report.md)
-- 状态：V0.1 验收全部通过；测试 396 项全绿
+V0.1 验收全部通过（真实项目验证：6 个真实任务、23 条语义事件、七项故障注入
+事实零丢失）；测试 396 项全绿。

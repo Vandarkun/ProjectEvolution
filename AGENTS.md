@@ -19,7 +19,8 @@
 
 ## 工程约束
 
-- 严格遵守 `project-evolution-ledger-docs/docs/05-implementation/` 各阶段文档，
+- 设计文档在本仓库之外本地维护（`../pel-design-docs/`，不开源）；
+  严格遵守 `../pel-design-docs/docs/05-implementation/` 各阶段文档，
   包括"明确不做"清单；文档修订的约束不得绕过。
 - 测试未通过不 commit；发现前序阶段问题先单独 `fix(前阶段)` 提交。
 - 每阶段验收通过后打 `{阶段}-done` tag。
