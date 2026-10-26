@@ -1,0 +1,7 @@
+# PEL 分析器接线示例（复制为 config.yaml 并填入真实值；真配置不入库）
+analyzer_provider: openai          # mock | openai | ollama
+analyzer_model: deepseek-chat
+analyzer_base_url: https://api.deepseek.com
+# key 二选一：明文（方便，本文件已被 gitignore）或引用环境变量名
+analyzer_api_key: sk-xxxxxxxxxxxxxxxx
+# analyzer_api_key_env: DEEPSEEK_API_KEY

@@ -23,3 +23,16 @@
   包括"明确不做"清单；文档修订的约束不得绕过。
 - 测试未通过不 commit；发现前序阶段问题先单独 `fix(前阶段)` 提交。
 - 每阶段验收通过后打 `{阶段}-done` tag。
+
+<!-- PEL:BEGIN -->
+## PEL 工程演进记录（自动生成，可整段删除）
+
+- 开始一个明确开发任务时调用 `start_task`；完成子阶段 / 关键设计取舍 /
+  关键测试首次通过 / 切换上下文前调用 `checkpoint_task`（摘要只写事实）；
+  任务结束调用 `complete_task`。
+- 改设计前先查：`get_project_state`（当前参数/决策）、`search_events`
+  （语义检索，中英跨语言）、`get_history`（精确历史）、`get_evidence`（证据）。
+- CLI 等价入口：`pel task start/checkpoint/complete`、`pel search`。
+- 永远不要手改 `.project-evolution/events/` 下的文件。
+- 不要每轮都调用这些工具，只在上述节点调用。
+<!-- PEL:END -->
